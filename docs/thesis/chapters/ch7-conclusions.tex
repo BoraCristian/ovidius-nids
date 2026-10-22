@@ -1,0 +1,199 @@
+\chapter{Conclusions and Future Work}
+\label{chap:conclusions}
+
+\section{Achievements}
+\label{sec:conc-achievements}
+
+The work documented in this thesis delivered a Network Intrusion
+Detection System that meets the three engineering questions set
+out in the introduction.
+
+The first question --- whether signature and machine-learning
+detection can cooperate explicitly in a single application ---
+is answered by the dispatcher's twenty-line merge logic and the
+three alert categories it produces. The synthetic validation in
+Chapter~\ref{chap:validation} shows that the hybrid category
+forms approximately two thirds of the alerts in the test
+catalogue once a Random Forest is activated. The pattern is
+exactly the cooperative behaviour the project set out to
+exhibit: signatures contribute precision and explanation, ML
+contributes corroboration, and the merge logic turns the
+combination into a single user-visible label.
+
+The second question --- whether per-alert forensic context can
+be persisted without an external packet sniffer --- is answered
+by the JSONL ring-tail mechanism. Every alert in the database
+has a path to its capture file, every capture file contains the
+last fifty packets the dispatcher saw, and the file is
+downloadable from the UI through an authenticated endpoint. The
+synthetic validation in Chapter~\ref{chap:validation} confirms
+that the mechanism produces a complete capture for each alert
+fired, with source and destination IPs preserved exactly as
+they entered the dispatcher.
+
+The third question --- whether the system can be deployed without
+infrastructure expertise --- is answered by the
+\file{run.py} launcher and its two wrappers. A user with Python
+3.12 and Node.js installed can clone the repository, double-click
+\file{run.bat}, and have a working SIEM in their browser within
+two minutes. The launcher handles the venv creation, the
+dependency installation, the subprocess supervision and the
+shutdown cleanly. The reliability work documented in
+Section~\ref{sec:design-launcher} (idempotent shutdown, Python
+version check, dependency stamp file, fallback to backend-only
+mode) is the difference between a thesis prototype and software
+that other people can actually run.
+
+Beyond the three originally stated questions, the project
+acquired a fourth contribution during development: the integrated
+\emph{Attack Console}. The component was added to solve the
+demo problem of needing on-demand attacks during a live
+presentation and turned into a small-scale, deterministic test
+harness for the whole pipeline. The Console exposes six attack
+types as UI buttons, fires them through the same dispatcher path
+that a real network interface would feed, and reports the number
+of alerts generated as immediate visual feedback. It became the
+most demonstrable feature of the entire system and is, to my
+knowledge, not present in any of the related-work tools listed
+in Chapter~\ref{chap:related-work}.
+
+\section{Limitations}
+\label{sec:conc-limitations}
+
+Honest accounting requires listing what the project does
+\emph{not} do. The most significant limitations, in rough order
+of importance, are:
+
+\textbf{The ML detector has only been evaluated on synthetic
+data.} The training set is generated inside
+\file{ml\_detector.py} from distributions designed to mimic
+benign and malicious traffic. The model performs almost
+perfectly on its own held-out test split, but that says little
+about how it would perform on real attack traffic outside the
+catalogue. The natural remediation is evaluation on
+CICIDS2017~\cite{sharafaldin2018cicids} or
+NSL-KDD~\cite{tavallaee2009detailed}, both of which are widely
+used in the IDS literature for exactly this purpose.
+
+\textbf{Per-packet features rather than per-flow.} The six
+features in Section~\ref{sec:design-features} describe a
+single packet. Many real-world attack patterns (slow scans,
+data exfiltration, beaconing) are only visible at the flow level
+--- packets aggregated into a bidirectional 5-tuple session ---
+and the current feature vector cannot capture them. A
+per-flow refactor is the largest single piece of remaining work
+and would be the first thing I would do if I had another
+semester on the project.
+
+\textbf{Schema evolution via \code{create\_all}.} The database
+schema is created at startup by SQLAlchemy's
+\code{Base.metadata.create\_all()}. This works for the initial
+deployment but loses data on schema changes; a real deployment
+would use Alembic migrations. The work to add Alembic is
+mostly mechanical, but I did not consider it justified within
+the thesis timeline.
+
+\textbf{No alert correlation.} Each alert is independent. In a
+production environment a single Nmap scan would produce dozens
+of alerts that should be grouped into a single ``incident'';
+the current console shows them as separate rows. Wazuh and
+Splunk Enterprise Security both have correlation rule engines;
+\nidsname{} has none.
+
+\textbf{Authentication is single-role.} The seeded admin user
+can do everything. There is no read-only analyst role, no
+audit log of who edited which rule, no two-factor
+authentication. For thesis-scale demonstration these are
+acceptable omissions; for a real deployment they are not.
+
+\textbf{Live capture untested on macOS.} I have run the
+LiveSniffer on Linux (libpcap) and Windows (Npcap) but not on
+macOS. The path should work because Scapy supports macOS, but
+I cannot personally certify it without testing.
+
+\section{Future Work}
+\label{sec:conc-future}
+
+The limitations above translate directly into a roadmap. In rough
+order of priority:
+
+\begin{enumerate}
+  \item \textbf{Flow-level features.} Aggregate packets into
+    bidirectional 5-tuple sessions, compute flow statistics
+    (packet count, byte count, mean and standard deviation of
+    inter-arrival, protocol-specific fields), and refit the ML
+    detector on the richer feature vector. Expected to improve
+    detection of multi-packet attack patterns.
+  \item \textbf{Evaluation on public datasets.} Train and
+    evaluate Random Forest and Isolation Forest on
+    CICIDS2017, report standard metrics (precision, recall,
+    F1, AUC) per attack family, and add a chapter to the
+    thesis comparing the results against published baselines.
+  \item \textbf{End-to-end live-capture validation.} Drive the
+    same attack catalogue from an external attacker host
+    (e.g.\ a Kali Linux virtual machine on the local LAN)
+    against the live-capture path, demonstrating that the
+    detection numbers reported in Chapter~\ref{chap:validation}
+    transfer to genuine network traffic without any code
+    change.
+  \item \textbf{Alembic migration suite.} Replace
+    \code{create\_all()} with a versioned migration system.
+    Write the initial migration that represents the current
+    schema as the baseline, so that future thesis iterations
+    can evolve the schema without losing the demo database.
+  \item \textbf{Alert correlation engine.} Implement an
+    ``incident'' table that groups related alerts by source IP
+    and category within a configurable time window. Surface
+    incidents as the default unit of the Alerts page, with
+    individual alerts accessible by drill-down.
+  \item \textbf{Snort rule import.} Translate a subset of the
+    open Snort Emerging Threats rule set into the project's
+    JSON match specification, mostly to enrich the default
+    rule database and validate the JSON schema's
+    expressiveness against a battle-tested ecosystem.
+  \item \textbf{User roles and audit log.} Add an
+    \code{analyst} role that has read-only access to alerts
+    and a write-restricted view of rules. Log every rule
+    modification, ML training and forensic download in an
+    \code{audit\_log} table.
+\end{enumerate}
+
+A few exploratory directions outside the priority queue, but
+worth recording:
+
+\begin{itemize}
+  \item \textbf{LLM-assisted triage.} A chat panel on the
+    Alert Detail page that summarises the captured packets in
+    natural language and suggests likely attack categories.
+    This is a separate research-grade question and I would only
+    pursue it after the priority list is complete.
+  \item \textbf{Distributed sensors.} Multiple capture
+    instances reporting to a single dispatcher. Useful for
+    multi-segment networks but a significant architectural
+    change.
+  \item \textbf{Production storage backend.} Swap SQLite for
+    PostgreSQL or DuckDB. The SQLAlchemy abstraction makes
+    the change largely mechanical, but the operational story
+    becomes more complex.
+\end{itemize}
+
+\section{Closing Remarks}
+\label{sec:conc-closing}
+
+When I started this thesis I expected the hardest part to be
+the machine learning. It was not. The ML implementation took
+roughly a week of work; the harder problems turned out to be the
+ones I had not anticipated: getting Scapy to behave on Windows,
+debugging the WebSocket auth handshake, writing a launcher that
+gracefully handles \verb|Ctrl+C| on three different operating
+systems, and making the React WebSocket subscriptions survive
+page navigation. None of these are research problems --- they
+are engineering problems, and the time spent on them is the
+difference between a paper sketch and a system that actually
+runs.
+
+The reward for that work is a project that demonstrates the
+detection pipeline end-to-end, with a console an analyst can
+actually use, deployable with a single double-click. That is
+what \nidsname{} is, and I think it is a defensible answer to
+the original brief.

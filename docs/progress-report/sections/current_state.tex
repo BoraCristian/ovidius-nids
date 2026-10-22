@@ -1,0 +1,108 @@
+% ============================
+%   6. Current state
+% ============================
+\section{Current state of the project}
+\label{sec:current_state}
+
+\subsection{Functional milestones reached}
+
+\begin{enumerate}
+    \item \textbf{Backend skeleton.} FastAPI application with async
+        SQLAlchemy, JWT auth, OpenAPI documentation auto-served at
+        \code{/docs}.
+    \item \textbf{Signature engine.} YAML seed file, DB-backed
+        editable rules, hot reload from the API, six bundled
+        categories (Recon, BruteForce, Injection, RemoteAccess,
+        DenialOfService, DataExfiltration).
+    \item \textbf{Capture layer.} Both LiveSniffer (Scapy) and the
+        synthetic TrafficSimulator are functional; the simulator
+        currently drives 99\% of demonstration usage because raw
+        capture requires elevated privileges.
+    \item \textbf{ML detector.} Random Forest and Isolation Forest can
+        be trained from the UI on a synthetic feature set; metrics,
+        feature importance and the active model are surfaced on the
+        ML Models page.
+    \item \textbf{Forensics.} Per-alert JSONL ring captures are
+        produced, listed and downloadable; the Alert Detail page
+        renders the packet timeline for replay.
+    \item \textbf{Frontend.} Login, Dashboard, Alerts, Alert Detail,
+        Rules, Forensics, ML Models and Settings pages are
+        feature-complete for the current milestone. Live updates via
+        WebSocket cover the dashboard chart and the alert stream.
+    \item \textbf{Deployment.} The one-click launcher works on
+        Windows, macOS and Linux; \code{run.bat} is a double-click
+        entry point and the auto-installer creates the venv and
+        installs both Python and Node dependencies on first launch.
+\end{enumerate}
+
+\subsection{Quantitative observations}
+
+The figures below are not formal benchmarks; they were collected
+during regular development on a laptop (Windows 11, Intel i7,
+16~GB RAM, Python 3.12, Node 20) and are reported here only as
+sanity checks for the upcoming evaluation chapter.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Observation} & \textbf{Value} \\
+\midrule
+Steady-state simulator throughput & 24--40 packets/s \\
+Burst peak (during an attack injection) & 90--120 packets/s \\
+Median signature-engine evaluation time per packet & $< 1$\,ms \\
+Median ML score (Random Forest) per packet & $\approx 0.4$\,ms \\
+Random Forest training time (synthetic, 4000 samples) & $\approx 1.0$\,s \\
+Isolation Forest training time (same dataset) & $\approx 0.7$\,s \\
+Random Forest accuracy on held-out 25\% split & 0.99 \\
+Isolation Forest accuracy on held-out 25\% split & 0.83 \\
+End-to-end alert latency (packet $\rightarrow$ UI) & $< 250$\,ms \\
+Backend cold start (first request served) & 1.5--3\,s \\
+Frontend cold start (Vite dev server) & 2--5\,s \\
+\bottomrule
+\end{tabularx}
+\caption{Indicative measurements during day-to-day usage.}
+\end{table}
+
+The unsupervised Isolation Forest unsurprisingly trails the supervised
+Random Forest on this synthetic dataset where labels are available; its
+purpose is to provide a deployment path when labelled attack data is
+not available, not to win an accuracy contest.
+
+\subsection{Known limitations}
+
+\begin{itemize}
+    \item Live packet capture has been tested only on Linux; Windows
+        and macOS require manual installation of WinPcap/Npcap or
+        equivalent, which the launcher does not yet automate.
+    \item The ML feature vector is currently per-packet rather than
+        per-flow; flow-aware aggregation is on the roadmap for the
+        final thesis.
+    \item No clustering or correlation engine yet; alerts are surfaced
+        individually. A future ``alert grouping by source IP'' view is
+        sketched.
+    \item Database migrations rely on \code{create\_all}. An Alembic
+        suite is planned before any production-style deployment.
+    \item The simulator's attack patterns are deterministic and
+        comparatively easy for the ML detector to flag. Evaluation on
+        the CICIDS2017~\cite{sharafaldin2018cicids} dataset is planned
+        for the experimental chapter.
+\end{itemize}
+
+\subsection{Repository state}
+
+At the time of writing, the repository contains approximately:
+\begin{itemize}
+    \item 1{,}900 lines of backend Python (engine + API + models +
+        schemas + tests scaffolding).
+    \item 2{,}600 lines of frontend JavaScript/JSX across eight pages
+        and the shared component library.
+    \item 480 lines of YAML/JSON for the default rule base and
+        configuration.
+    \item A single-pass-compilable LaTeX folder (this document) with
+        bibliography and section split.
+\end{itemize}
+The default credentials in the seeded admin user are
+\code{admin}/\code{admin}; the password can now be rotated from the
+Settings page after first login.

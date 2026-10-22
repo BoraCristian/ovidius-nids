@@ -1,0 +1,245 @@
+\chapter{Theoretical Background}
+\label{chap:background}
+
+\section{Network Intrusion Detection Systems}
+\label{sec:bg-nids}
+
+A Network Intrusion Detection System inspects packets crossing a
+network and emits an alert when those packets match a model of
+malicious activity. The discipline grew out of host-based intrusion
+detection in the late 1980s and was formalised in the late 1990s when
+Vern Paxson published Bro --- the system later renamed
+Zeek~\cite{paxson1999bro} --- and Martin Roesch published the first
+version of Snort~\cite{roesch1999snort}. Both systems are still
+maintained today and still influence the architecture of every
+serious open-source NIDS, including this one.
+
+A NIDS sits passively in front of the traffic it watches. It does not
+forward, drop or modify packets; it only observes. Inline detection,
+where the system actively blocks traffic, falls under the related
+acronym NIPS (Network Intrusion Prevention System). \nidsname{} is a
+NIDS in the strict sense: it can produce alerts but it cannot stop a
+packet from reaching its destination. The reasoning is partly
+philosophical and partly practical. Blocking traffic at the inspection
+point creates a single point of failure for the whole network, and
+production deployments overwhelmingly prefer to run detection in a
+side-channel (a SPAN port, a TAP, a virtual interface) and to put
+prevention behind a separate firewall layer.
+
+The taxonomy of detection strategies usually splits along two axes:
+the \emph{paradigm} (misuse-based versus anomaly-based) and the
+\emph{granularity} (packet-level versus flow-level)~\cite{garcia2009anomaly}.
+The paradigm axis is the more important one. Misuse-based or
+signature-based detection encodes the patterns of known attacks; the
+engine matches each packet against a curated set of rules. Anomaly-based
+detection encodes a model of normal traffic; the engine flags packets
+that deviate from that model. The granularity axis is more of an
+implementation choice: a packet-level engine inspects each frame in
+isolation, while a flow-level engine aggregates packets sharing the
+same 5-tuple into a bidirectional flow before scoring. \nidsname{}
+operates packet-level because the design priority was real-time
+responsiveness; flow features such as inter-arrival time are kept as
+streaming state inside the ML detector.
+
+\section{Signature-Based Detection}
+\label{sec:bg-signature}
+
+Signature-based detection is the older and conceptually simpler
+approach. The engine holds a database of patterns; for each packet it
+iterates the patterns and emits an alert whenever one matches. The
+patterns themselves are typically expressed in a domain-specific
+language. Snort's rule syntax has become an informal standard and is
+shared (with extensions) by Suricata~\cite{suricata}. A typical Snort
+rule looks like this:
+
+\begin{verbatim}
+alert tcp $EXTERNAL_NET any -> $HOME_NET 22
+  (msg:"SSH brute force attempt";
+   flags:S;
+   threshold:type both, track by_src, count 10, seconds 30;
+   classtype:attempted-recon; sid:1000001; rev:1;)
+\end{verbatim}
+
+The header (\verb|alert tcp ... -> ... 22|) constrains the protocol,
+direction and ports. The options inside the parentheses constrain
+payload contents, TCP flag combinations, packet sizes, and so on. The
+\verb|threshold| option turns a single-packet pattern into a temporal
+one --- it fires only when a certain count of matches arrives within a
+given window from the same source.
+
+Signature-based detection has two well-understood strengths. It is
+\emph{precise} (false-positive rate is low when rules are well-written)
+and it is \emph{auditable} (each alert carries the identifier of the
+rule that produced it, so an analyst can trace the decision back to a
+human-written predicate). Its corresponding weakness is that it cannot
+detect attacks for which no rule has yet been written. Every novel
+attack technique has a window between its first appearance in the wild
+and the day a signature for it ships in the rule
+distribution~\cite{garcia2009anomaly}; during that window, a
+signature-only engine sees nothing.
+
+\nidsname{} uses a JSON-based match specification instead of the
+Snort DSL. The decision was driven by two factors. First, a JSON match
+maps cleanly to a Pydantic model on the backend and to a JavaScript
+object on the frontend, which makes the rule-editing experience much
+simpler than parsing and pretty-printing Snort syntax. Second, the
+project does not aim to compete with Snort on rule expressiveness; it
+aims to cover the categories of attack the validation scenario uses
+(port scans, brute-force attempts, simple floods, content-based
+exploits), and the JSON specification is sufficient for all of them.
+Section~\ref{sec:design-signature} describes the exact schema.
+
+\section{Anomaly-Based and Machine-Learning Detection}
+\label{sec:bg-ml}
+
+Anomaly-based detection inverts the signature paradigm. Instead of
+asking ``does this packet look like a known attack?'' it asks ``does
+this packet look like normal traffic?''. The engine learns a model of
+the normal distribution from observed data and flags samples that fall
+outside it. The literature on the topic is enormous; Buczak and Guven
+counted over a hundred distinct proposals in a single survey
+paper~\cite{buczak2016survey}, and Khraisat et~al.\ extended the count
+in a more recent review~\cite{khraisat2019survey}.
+
+I selected two algorithms from this body of work for \nidsname{}:
+Random Forest and Isolation Forest. Both are tree-based ensemble
+methods from scikit-learn~\cite{pedregosa2011scikit}, and both are
+fast enough to run in the per-packet inference path without affecting
+the overall throughput. They were chosen for their complementary
+semantics rather than for any claim of state-of-the-art accuracy.
+
+\subsection{Random Forest}
+\label{sec:bg-rf}
+
+The first algorithm came from Leo Breiman's 2001
+paper~\cite{breiman2001random}. The construction is
+straightforward to describe but surprisingly hard to beat in
+practice. You grow a collection of decision trees, each on its
+own bootstrap sample of the training rows, and at every split
+inside each tree you let the algorithm pick from a random
+subset of the features rather than from all of them. At
+prediction time the trees vote. The randomness in the two
+sampling steps is what stops the forest from agreeing too
+closely with itself --- the resulting ensemble keeps the
+interpretability of individual trees but throws away most of
+their variance.
+
+I picked it for the NIDS pipeline because of three properties
+that mattered to me. The first is calibrated probabilities,
+which gave me a sensible threshold knob (\code{0.8} by default)
+between flagging too much and flagging too little. The second
+is robustness: the algorithm tolerates noisy or partially
+irrelevant features without obvious degradation, and I knew
+upfront that not all six of my features (Section
+\ref{sec:design-features}) would be equally informative on
+every packet. The third is the \code{feature\_importances\_}
+attribute on the trained model. Surfacing it as a bar chart on
+the ML Models page (Figure~\ref{fig:ml-models}) means an
+analyst can see, at a glance, that the classifier weighted
+\code{inter\_arrival\_ms} heavily for a particular alert ---
+that's actionable; a bare probability score isn't.
+
+The downside is that it needs labelled training data. For this
+thesis the training set is synthesised from known patterns and
+that works fine. In production deployment, keeping labels
+fresh enough to retrain on becomes the dominant ongoing cost,
+which is one of the reasons I wanted the second algorithm
+below as a backup.
+
+\subsection{Isolation Forest}
+\label{sec:bg-iforest}
+
+The second algorithm came from a 2008 paper by Liu, Ting and
+Zhou~\cite{liu2008isolation}, and the intuition behind it is
+charming once you see it. Anomalies, the authors argue, are by
+definition both rare and different, so a random partitioning
+scheme should be able to isolate them faster than it isolates
+the rest of the data. The construction reflects that idea
+directly. Grow a forest of binary trees, each built by picking
+a random feature and a random split point between that
+feature's minimum and maximum value. To score a new sample,
+drop it through every tree and measure how deep it had to
+travel before reaching a leaf. Anomalies travel less. The
+shorter the average path, the more anomalous the sample is
+considered to be.
+
+The advantage over a Random Forest is one I keep coming back
+to: no labels. You only need a clean sample of normal traffic,
+which is much easier to collect than a labelled attack corpus.
+The disadvantage shows up at the edges of the normal
+distribution, where rare-but-legitimate behaviour starts
+looking suspicious in exactly the way attacks do. That's the
+exact failure mode that Sommer and Paxson called
+out~\cite{sommer2010outside} in their critique of academic
+ML-IDS, and it's the reason I shipped \emph{both} algorithms
+behind the same interface rather than committing to one. An
+operator who has labelled data gets the supervised Random
+Forest. One who doesn't gets the unsupervised Isolation
+Forest. The rest of the pipeline doesn't change.
+
+\section{Hybrid Detection}
+\label{sec:bg-hybrid}
+
+When both engines run on the same packet stream, the dispatcher can
+produce three different alert categories:
+
+\begin{description}
+  \item[Signature-only:] the rule engine matched but the ML model
+    classified the packet as benign. This is the highest-precision
+    category --- the rule guarantees the packet matches a known
+    pattern, and the model's disagreement carries no penalty.
+  \item[ML-only:] no rule matched but the model's score exceeded the
+    alert threshold. This category catches patterns for which no
+    signature exists, at the cost of less explanation. An analyst
+    looking at an ml-only alert knows the model thought the packet
+    was malicious, but has to dig into the feature vector to see why.
+  \item[Hybrid:] both engines flagged the same packet. This is the
+    most reliable category. The rule contributes precision (a human
+    decided this pattern is malicious) and the model contributes
+    corroboration (the statistical evidence supports the rule).
+\end{description}
+
+The categorisation is performed in the dispatcher's
+\code{\_evaluate} method. Each candidate alert carries an explicit
+\code{detection\_method} field that propagates all the way to the UI,
+where the analyst sees a coloured chip indicating the source. This
+removes the black-box critique that has historically been levelled at
+ML-based IDS~\cite{sommer2010outside}: the alert always tells the user
+which engine produced it, and a click on the alert detail page shows
+both the rule that matched and the ML score on the same screen.
+
+\section{Forensics}
+\label{sec:bg-forensics}
+
+The forensic dimension is what distinguishes operational SIEM tools
+(Wazuh, Splunk, IBM QRadar) from detection-only engines. An alert by
+itself is just a row in a log; what makes it actionable is the
+context. The classic forensic workflow is: see the alert, retrieve
+the packets that produced it, eyeball them, decide if the alert is a
+true or false positive, take the appropriate downstream action.
+
+In a typical NIDS deployment, the retrieval step is delegated to a
+full-packet-capture system that operates in parallel with the
+detection engine. Moloch / Arkime is the canonical open-source
+example. The architecture is sound but it involves running two
+separate stacks, correlating their data by timestamp and 5-tuple, and
+training the analyst on two different consoles. \nidsname{} takes a
+different position: every alert carries its own packet capture
+inline.
+
+The mechanism is straightforward. The dispatcher maintains a
+fixed-size ring buffer (\code{deque(maxlen=200)}) of the most recent
+packets seen. When an alert is produced, the dispatcher slices the
+last 50 entries off the ring and serialises them to a JSON Lines file
+named after the alert ID. The path is stored on the
+\code{Alert} row and a separate \code{PcapRecord} row indexes it for
+the UI. Download is served by an authenticated FastAPI endpoint that
+streams the file with a \code{FileResponse}. Section
+\ref{sec:design-forensics} walks through the implementation.
+
+JSON Lines was chosen over the libpcap binary format for two
+practical reasons. JSONL is human-readable, so an analyst can open
+the file in any text editor or pipe it through \code{jq} for
+filtering. And JSONL does not depend on libpcap or wpcap being
+installed at the time the file is created, which simplifies the
+Windows deployment story considerably.

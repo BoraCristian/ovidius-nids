@@ -1,0 +1,34 @@
+% ============================
+%   Abstract
+% ============================
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+This report describes the current state of \nidsname, a Network Intrusion
+Detection System (NIDS) that combines classical signature-based rule
+matching with a supervised / unsupervised machine-learning detector and
+exposes both as a self-contained Security Information and Event Management
+(SIEM) console. The system captures network packets in real time
+(via Scapy~\cite{scapy} or a deterministic synthetic traffic generator),
+evaluates each packet against a YAML-seeded rule base, scores it with a
+scikit-learn~\cite{pedregosa2011scikit} classifier (Random
+Forest~\cite{breiman2001random} or Isolation Forest~\cite{liu2008isolation})
+and persists, for every triggered alert, a ring-buffered packet snapshot to
+disk so that the analyst can replay the events surrounding the
+incident---a built-in forensics layer that distinguishes this project from
+the typical academic IDS prototype.
+
+The current implementation reaches Milestone~3 of the planned roadmap: the
+backend (FastAPI~\cite{ramirez2022fastapi}, async SQLAlchemy, JWT
+authentication, WebSocket live streams) and the React dashboard
+(Vite~\cite{vite}, TailwindCSS, Recharts) are end-to-end functional, the
+hybrid detection pipeline produces alerts on synthetic attack traffic, and
+a one-click cross-platform launcher abstracts the setup steps. This
+document summarises the motivation, theoretical background, architecture,
+implementation choices and the work remaining before the final thesis
+defense.
+\vspace{0.4cm}
+
+\noindent\textbf{Keywords:} Intrusion Detection, Network Security,
+Machine Learning, Random Forest, Isolation Forest, SIEM, Forensics,
+FastAPI, React.

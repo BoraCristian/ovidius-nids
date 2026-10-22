@@ -1,0 +1,174 @@
+% =====================================================================
+%  Bachelor's Thesis — Ovidius University of Constanța
+%  Computer Science, Faculty of Mathematics and Computer Science
+%
+%  Title : Information System for Network Detection Intrusion
+%  Author: Bora Cristian-Vasile
+%  Coord.: Prof. Dorin Iordache
+%  Year  : 2026
+%
+%  Build:    latexmk -pdf main.tex
+%  Or:       pdflatex main.tex && bibtex main && pdflatex main.tex && pdflatex main.tex
+% =====================================================================
+% openany = chapters start on the next available page (no forced blanks
+% between chapters). Switch back to openright if you want to print the
+% thesis bound and double-sided.
+\documentclass[12pt,a4paper,twoside,openany]{book}
+
+% -------- encoding / language --------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% -------- layout --------
+\usepackage[a4paper,inner=3cm,outer=2.5cm,top=2.8cm,bottom=2.8cm,headheight=15pt]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\setlength{\parskip}{0.4\baselineskip}
+\setlength{\parindent}{1.2em}
+
+% -------- headers / footers (match Izdrea-2023 style) --------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE]{\textit{\leftmark}}            % even pages — left: chapter
+\fancyhead[RO]{\textit{\rightmark}}           % odd  pages — right: section
+\fancyfoot[LE,RO]{\textit{\thepage}}          % page number in italics
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+\renewcommand{\sectionmark}[1]{\markright{#1}{}}
+
+% Empty pagestyle for chapter opening pages
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[LE,RO]{\textit{\thepage}}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
+
+% -------- chapter title formatting (match the Izdrea double-line look) --------
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\sffamily\bfseries\Huge\raggedleft}
+  {\rule{\textwidth}{1.2pt}\vspace{0.3em}\\Chapter \thechapter}
+  {0.4em}
+  {\rule{\textwidth}{0.4pt}\vspace{0.6em}\\\raggedleft}
+  [\vspace{0.5em}\rule{\textwidth}{0.4pt}]
+\titlespacing*{\chapter}{0pt}{-10pt}{30pt}
+
+\titleformat{\section}
+  {\normalfont\sffamily\bfseries\Large}
+  {\thesection}{0.8em}{}
+\titleformat{\subsection}
+  {\normalfont\sffamily\bfseries\large}
+  {\thesubsection}{0.7em}{}
+
+% -------- math, tables, code --------
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+
+\usepackage{listings}
+\usepackage{xcolor}
+\definecolor{kw}{HTML}{0F5BD8}
+\definecolor{str}{HTML}{0E7490}
+\definecolor{cmt}{HTML}{6B7280}
+\definecolor{lstbg}{HTML}{F7F8FA}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{lstbg},
+  keywordstyle=\color{kw}\bfseries,
+  stringstyle=\color{str},
+  commentstyle=\color{cmt}\itshape,
+  showstringspaces=false,
+  breaklines=true,
+  columns=fullflexible,
+  frame=single,
+  framerule=0.4pt,
+  framesep=4pt,
+  xleftmargin=0pt,
+  numbers=left,
+  numberstyle=\tiny\color{cmt},
+  captionpos=b,
+}
+
+% Define a Python style we use repeatedly
+\lstdefinestyle{pyfile}{language=Python}
+\lstdefinestyle{jsfile}{language=JavaScript}
+\lstdefinestyle{yamlfile}{
+  basicstyle=\ttfamily\footnotesize,
+  morekeywords={true,false,null,name,description,category,severity,action,match,protocol,flags,threshold,count,seconds,track,dst_port,regex,content,min_length,enabled},
+}
+
+% -------- graphics / floats --------
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf,format=plain}
+\usepackage{float}
+
+% -------- bibliography (natbib + bibtex for portability) --------
+\usepackage[numbers,sort&compress]{natbib}
+\bibliographystyle{plainnat}
+
+% -------- hyperlinks --------
+\usepackage[hidelinks,unicode]{hyperref}
+\hypersetup{
+  pdfauthor={Bora Cristian-Vasile},
+  pdftitle={Information System for Network Detection Intrusion — Bachelor's Thesis},
+  pdfsubject={Information System for Network Detection Intrusion},
+}
+
+% -------- handy commands --------
+\newcommand{\nidsname}{Ovidius~NIDS}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\file}[1]{\texttt{\small#1}}
+
+% Let LaTeX stretch interword spacing more before declaring an overfull
+% box. 4em absorbs the long inline code/file-path overflows that appeared
+% on pages 19, 29, 37 and 45 of the previous build without making body
+% paragraphs look loose.
+\setlength{\emergencystretch}{4em}
+\sloppy
+
+% Allow hyphenation inside \texttt{} (default forbids it).  Without this,
+% long inline identifiers like \code{Dispatcher.\_persist\_and\_broadcast()}
+% are one unbreakable token and cause overfull boxes.
+\usepackage[htt]{hyphenat}
+
+% =====================================================================
+\begin{document}
+
+% =========== FRONT MATTER ===========
+\frontmatter
+\pagestyle{empty}
+\input{frontmatter/titlepage}
+
+\clearpage
+\pagestyle{fancy}
+\input{frontmatter/acknowledgements}
+\tableofcontents
+\listoffigures
+\listoftables
+
+% =========== MAIN MATTER ===========
+\mainmatter
+\input{chapters/ch1-introduction}
+\input{chapters/ch2-background}
+\input{chapters/ch3-technologies}
+\input{chapters/ch4-related-work}
+\input{chapters/ch5-design}
+\input{chapters/ch6-validation}
+\input{chapters/ch7-conclusions}
+
+% =========== BACK MATTER ===========
+\backmatter
+\addcontentsline{toc}{chapter}{Bibliography}
+\bibliography{references}
+
+\end{document}

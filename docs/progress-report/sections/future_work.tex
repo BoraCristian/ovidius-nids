@@ -1,0 +1,83 @@
+% ============================
+%   7. Future work
+% ============================
+\section{Remaining work and outlook}
+\label{sec:future_work}
+
+The progress documented in this report covers the first three milestones
+of the planned development cycle. The remaining items, grouped by
+priority, are listed below.
+
+\subsection{Before the final thesis defense}
+
+\begin{enumerate}
+    \item \textbf{Flow-level features.} Aggregate packets into
+        bidirectional 5-tuple flows and extend the feature vector with
+        duration, packet count, byte count, mean inter-arrival, and
+        protocol-specific fields. This is expected to improve the ML
+        detector's behaviour on multi-packet attack patterns where a
+        single packet is not informative on its own.
+    \item \textbf{Evaluation on a public dataset.} Reproduce the
+        training and evaluation pipeline on the
+        CICIDS2017~\cite{sharafaldin2018cicids} dataset and on
+        NSL-KDD~\cite{tavallaee2009detailed} to obtain comparable
+        accuracy/precision/recall/F1 figures alongside the synthetic
+        baseline already reported here.
+    \item \textbf{Alembic migrations.} Replace
+        \code{Base.metadata.create\_all()} with a versioned migration
+        suite to support schema evolution without data loss.
+    \item \textbf{Hardening of the live sniffer.} Document, and where
+        possible automate, the Npcap installation on Windows and the
+        capability flags on Linux (\code{cap\_net\_raw}).
+    \item \textbf{Test coverage.} Expand the unit-test scaffolding
+        (currently smoke tests on the signature engine and the
+        dispatcher merge logic) towards an integration-test suite that
+        replays a deterministic packet trace and asserts against the
+        produced alerts.
+\end{enumerate}
+
+\subsection{Stretch goals}
+
+\begin{enumerate}
+    \item \textbf{Alert correlation.} Group consecutive alerts that
+        share a source IP and category into a single ``incident'' view,
+        analogous to the SecurityOnion ``case'' concept.
+    \item \textbf{User-role separation.} Distinguish read-only analyst
+        from admin in the UI; restrict rule editing to admins.
+    \item \textbf{External rule import.} Translate a subset of Snort
+        rules into the project's JSON match specification, providing a
+        bridge to the larger rule ecosystem.
+    \item \textbf{LLM-assisted triage.} A small chat panel on the
+        Alert Detail page that summarises the captured packets in
+        natural language --- a separate exploration tracked as a
+        possible appendix chapter.
+\end{enumerate}
+
+\subsection{Risks and mitigations}
+
+\begin{description}
+    \item[Library compatibility on new Python releases.] Scientific
+        wheels for Python~3.14 are not yet published on Windows. The
+        launcher already refuses such interpreters and instructs the
+        user to install Python~3.12. The risk is bounded.
+    \item[Evaluation realism.] Synthetic datasets risk over-stating
+        the ML detector's quality~\cite{sommer2010outside}. The planned
+        CICIDS2017 evaluation is the mitigation.
+    \item[Time budget.] The flow-level refactor is the largest single
+        item remaining and is on the critical path. A reduced fallback
+        (flow features computed only on a sliding window, no
+        per-flow state in the database) is available if needed.
+\end{description}
+
+\subsection{Conclusion of this progress report}
+
+The project has reached the point where the three engines --- signature,
+machine-learning, and forensics --- cooperate inside a single,
+self-hostable SIEM experience, accessible through a one-click launcher
+suitable for academic demonstration. The remaining work is concentrated
+on improving the ML detector's realism, evaluating it against
+established public datasets, and tightening the production-readiness of
+the deployment story. The codebase, the live demonstration of the
+running application, and this document together constitute the
+\textit{state of the art} of the bachelor's thesis at the date of this
+report.

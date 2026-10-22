@@ -1,0 +1,90 @@
+% ============================
+%   1. Introduction
+% ============================
+\section{Introduction}
+\label{sec:introduction}
+
+\subsection{Context and motivation}
+
+Network attacks have moved from a niche concern to a mainstream business
+risk: modern enterprises rely on continuously inspecting their traffic for
+malicious patterns, and the discipline that formalises that inspection is
+\textit{Network Intrusion Detection}. Two complementary schools of thought
+dominate the field. \textbf{Signature-based} systems --- Snort,
+Suricata and Zeek being the canonical references~\cite{roesch1999snort,
+suricata, paxson1999bro} --- pattern-match every packet (or every flow)
+against a hand-curated rule base, producing high-precision alerts but
+inevitably missing attacks for which no rule has yet been
+written~\cite{garcia2009anomaly}. \textbf{Anomaly-based} (or
+machine-learning-based) systems instead learn a model of ``normal''
+behaviour and flag deviations~\cite{buczak2016survey}; they cope better
+with previously-unseen attacks but pay for that flexibility with a higher
+false-positive rate and the well-known interpretability deficit famously
+critiqued by Sommer and Paxson~\cite{sommer2010outside}.
+
+Real-world Security Operations Centres rarely deploy one school in
+isolation. They run a signature engine for the cheap, high-confidence
+detections \textit{and} a machine-learning detector as a second opinion,
+and they need a way to investigate any alert in detail---often by
+replaying the precise packets that led up to it. That last requirement
+(\textit{forensics}) is the most under-served in open-source academic
+work: the typical research prototype evaluates a classifier on a static
+dataset and stops there, leaving the analyst experience entirely out of
+scope.
+
+\subsection{Problem statement}
+
+The project addresses three concrete questions:
+
+\begin{enumerate}
+    \item Can a single self-hostable application combine signature and
+        machine-learning detection in a way where the two engines reinforce
+        each other (\textit{hybrid} detection) rather than running
+        side-by-side as silos?
+    \item Can such a system persist enough context per alert that an
+        analyst can perform meaningful triage without an external packet
+        sniffer? Specifically: which packets immediately preceded the
+        alert, what was their payload, what was the inter-arrival
+        timing?
+    \item Can the whole thing be packaged so that a non-developer (a
+        coordinator, a defense committee, an evaluator at the
+        \textit{Faculty of Mathematics and Computer Science}) can launch
+        it with a double-click and see results within seconds, without
+        Python, Node or virtual-environment knowledge?
+\end{enumerate}
+
+\subsection{Contribution of this stage}
+
+At the time of this progress report, the project contributes:
+\begin{itemize}
+    \item A modular detection pipeline (\code{Dispatcher} -- see
+        Section~\ref{sec:architecture}) where signature and ML verdicts
+        are merged into three explicit alert categories:
+        \textit{signature-only}, \textit{ml-only}, and \textit{hybrid}.
+    \item A YAML-seeded, hot-reloadable rule store editable from the UI,
+        avoiding the restart-to-edit penalty common in Snort/Suricata
+        deployments.
+    \item A per-alert ring-buffered packet capture written as JSON Lines
+        on disk, downloadable from the UI through an authenticated
+        endpoint.
+    \item A React + Tailwind SIEM console (login, dashboard, alerts,
+        rules, forensics, ML models, settings) with live WebSocket
+        updates for both packet rate and alert stream.
+    \item A one-click cross-platform launcher
+        (\code{run.py}~/~\code{run.bat}~/~\code{run.sh}) that creates a
+        virtual environment, installs dependencies, starts both
+        services, opens the browser, and handles graceful
+        shutdown---designed specifically for the
+        \textit{open-and-demonstrate} scenario typical of a thesis
+        defense.
+\end{itemize}
+
+The remainder of this document is organised as follows.
+Section~\ref{sec:background} reviews the necessary background.
+Section~\ref{sec:related_work} situates the project relative to existing
+tools and research. Section~\ref{sec:architecture} describes the system
+design. Section~\ref{sec:implementation} discusses the implementation
+details. Section~\ref{sec:current_state} reports what is functional
+today, with quantitative observations gathered during development.
+Section~\ref{sec:future_work} closes with the items remaining before the
+final defense.

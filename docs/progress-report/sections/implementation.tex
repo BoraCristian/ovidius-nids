@@ -1,0 +1,179 @@
+% ============================
+%   5. Implementation
+% ============================
+\section{Implementation details}
+\label{sec:implementation}
+
+\subsection{Technology stack}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Layer} & \textbf{Choice} \\
+\midrule
+Backend framework            & FastAPI~\cite{ramirez2022fastapi} on Uvicorn \\
+ORM                          & SQLAlchemy 2 (async) with aiosqlite \\
+Authentication               & OAuth2 password flow $\rightarrow$ JWT signed with HS256 \\
+Password hashing             & bcrypt~\cite{bcrypt} (direct calls, no passlib) \\
+Packet capture               & Scapy 2.5+~\cite{scapy} \\
+Machine learning             & scikit-learn~\cite{pedregosa2011scikit} (RandomForest, IsolationForest) \\
+Numerical                    & NumPy \\
+Validation                   & Pydantic v2 \\
+Frontend                     & React 18 + Vite~\cite{vite} \\
+Styling                      & TailwindCSS 3 \\
+Charts                       & Recharts \\
+Icons                        & lucide-react \\
+Test \& packaging            & pytest, joblib, virtualenv \\
+\bottomrule
+\end{tabularx}
+\caption{Technology stack as of the current milestone.}
+\end{table}
+
+The choice of FastAPI was driven by three properties: native asynchronous
+support (necessary because the packet pipeline is event-loop driven), an
+automatically generated OpenAPI schema (useful for the defense
+demonstration), and very low boilerplate for dependency-injected
+authentication. SQLite was retained for the same reason that motivated
+the one-click launcher: zero installation footprint.
+
+\subsection{Packet model}
+
+The internal \code{Packet} dataclass is intentionally framework-agnostic
+so that the \code{LiveSniffer} and the \code{TrafficSimulator} can feed
+it interchangeably:
+\begin{lstlisting}[language=Python,caption={Internal packet representation}]
+@dataclass
+class Packet:
+    ts: datetime            # UTC, timezone-aware
+    protocol: str           # "TCP" | "UDP" | "ICMP" | "OTHER"
+    src_ip: str
+    src_port: int
+    dst_ip: str
+    dst_port: int
+    length: int             # full L2 length
+    flags: str              # comma-separated TCP flags
+    payload: bytes
+\end{lstlisting}
+
+\subsection{Detection pipeline core}
+
+The heart of the system is the \code{Dispatcher.handle} coroutine. It
+shows three concerns kept deliberately separate: metrics, publication,
+and detection.
+\begin{lstlisting}[language=Python,caption={Dispatcher entry point (excerpt)}]
+async def handle(self, pkt: Packet) -> None:
+    self._pkt_count += 1
+    self._ring.append(pkt)
+    self._tick_pps()
+
+    await self._publish_traffic(pkt)
+    await self._maybe_persist_event(pkt)
+
+    alerts = self._evaluate(pkt)
+    if alerts:
+        await self._persist_and_broadcast(alerts)
+\end{lstlisting}
+
+The merge logic that produces the three alert categories
+(signature-only, ml-only, hybrid) lives in \code{\_evaluate}; it is the
+locus of the design choice highlighted in Section~\ref{sec:background}.
+
+\subsection{Authentication and authorisation}
+
+Login uses the OAuth2 password flow exposed by FastAPI; tokens are
+JWTs (HS256) carrying \code{sub} (username) and an optional role claim,
+with a default 60-minute expiry. Every protected route declares
+\code{Depends(get\_current\_user)}, which decodes the token, loads the
+matching \code{User} row and rejects expired or unknown credentials
+with HTTP 401. WebSocket endpoints follow the same path but accept the
+token as a query-string parameter, since browser WebSocket clients
+cannot set custom request headers~\cite{ietf6455}.
+
+\subsection{Forensic file format}
+
+Each per-alert capture file is a JSON Lines document where every line
+encodes one packet (timestamp, 5-tuple, flags, length, base64-encoded
+payload preview). The format was chosen over PCAP because:
+\begin{itemize}
+    \item It is line-delimited, so the dashboard can stream a paginated
+        preview without parsing the whole file.
+    \item It is human-readable, which matters for academic demonstration.
+    \item It avoids the dependency on libpcap-format encoding (Scapy's
+        \code{wrpcap}) which complicates portability to operating
+        systems without a libpcap install.
+\end{itemize}
+
+\subsection{Resilience and recent stabilisation work}
+
+During the latest iteration, several rough edges identified in everyday
+use were addressed:
+\begin{description}
+    \item[First-login race.] On a cold boot the very first
+        \code{POST /api/auth/login} could race against the lifespan
+        seeding phase and return HTTP 500. The endpoint now catches the
+        transient database exception, returns a clean 503, and the
+        frontend retries up to three times with linear back-off,
+        eliminating the ``mash the button until it works'' artefact.
+    \item[Idempotent shutdown.] The launcher's shutdown routine is now
+        guarded by a flag so that the trio of atexit, signal handler
+        and \code{finally} clause does not run shutdown three times. On
+        Windows this previously required the user to confirm the
+        ``Terminate batch job?'' prompt twice.
+    \item[Authenticated download.] The Forensics page now downloads
+        files through a \code{fetch}-based helper that attaches the JWT
+        in the Authorization header and converts the response to a
+        \code{Blob} URL; the previous \code{<a download>} link failed
+        because anchor navigation cannot set custom headers, which
+        produced an opaque ``File wasn't available'' Chrome error.
+    \item[Filter correctness.] The Alerts page filters (severity,
+        method, status, free-text) now apply to both the historical
+        rows fetched from the API and to the live WebSocket stream;
+        previously the live stream bypassed the filter predicate.
+    \item[Themed confirmation dialog.] Destructive actions (currently
+        \textit{Delete rule}) raise a navy-cyan modal component
+        consistent with the rest of the interface instead of the
+        browser's native pop-up.
+    \item[ML registry collisions.] Re-training with the default model
+        name no longer crashes on the \code{UNIQUE} constraint; the
+        backend auto-suffixes a free name and the frontend defaults the
+        name per algorithm.
+    \item[Settings page.] The previously read-only Settings tab now
+        offers a change-password form (backed by
+        \code{POST /api/auth/change-password}), surfaces the current
+        signed-in user and role, and documents the deployment
+        configuration knobs.
+\end{description}
+
+\subsection{Source-tree organisation}
+
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,caption={Repository layout (abridged)}]
+Licenta_NIDS/
+|-- backend/
+|   |-- app/
+|   |   |-- api/                  FastAPI routers
+|   |   |-- core/                 config, database, security
+|   |   |-- engine/               sniffer, dispatcher, signatures, ML detector
+|   |   |-- models/               SQLAlchemy ORM
+|   |   |-- schemas/              Pydantic
+|   |   |-- ws/                   WebSocket endpoints
+|   |   `-- main.py               app factory + lifespan
+|   |-- data/
+|   |   |-- rules/default_rules.yaml
+|   |   `-- models/               *.joblib
+|   `-- requirements.txt
+|-- frontend/
+|   |-- src/
+|   |   |-- api/                  HTTP + WS client
+|   |   |-- components/           shared UI (modals, badges, sidebar)
+|   |   |-- pages/                Login, Dashboard, Alerts, AlertDetail,
+|   |   |                         Rules, Forensics, MLModels, Settings
+|   |   `-- store/auth.jsx        auth context
+|   `-- package.json
+|-- docs/progress-report/         this document
+|-- run.py                        cross-platform launcher
+|-- run.bat                       Windows wrapper
+|-- run.sh                        Unix wrapper
+`-- README.md
+\end{lstlisting}

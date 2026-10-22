@@ -1,0 +1,263 @@
+\chapter{Related Work}
+\label{chap:related-work}
+
+The intrusion detection landscape is dense. To position \nidsname{}
+honestly I divided the comparison into three groups: production-grade
+open-source NIDS engines, commercial SIEM platforms and the academic
+machine-learning IDS literature. Each section ends with a short note
+on how my project differs.
+
+\section{Snort}
+\label{sec:rw-snort}
+
+I'll start with the tool everyone benchmarks against.
+\textbf{Snort}~\cite{roesch1999snort} arrived in 1998 from Martin
+Roesch as the open-source answer to expensive commercial NIDS
+appliances of the late 1990s. Almost three decades later it is
+still under active development; the current C++ rewrite (Snort 3,
+2021) replaced the original C engine that Roesch wrote, but the
+detection philosophy hasn't shifted: rules in, alerts out, no UI
+between them.
+
+What people actually buy into when they pick Snort is the rules
+ecosystem rather than the engine. Cisco's Talos team (Cisco bought
+Sourcefire, the company behind Snort, back in 2013) ships a daily
+Subscriber rule set for paying customers and a weekly Community
+one for free users. Proofpoint runs Emerging Threats, a
+third-party project that distributes thousands of additional
+rules at no charge. A real-world Snort deployment is essentially
+a subscription to detection logic written by other people --- the
+engine's biggest strength on day one, and the recurring tax on
+day two when the rules need pruning, tuning and retiring.
+
+On the engineering side Snort was built for line-rate inspection.
+With the right NIC and config it'll happily process multiple
+gigabits per second of inline traffic. The cost of that
+throughput is an interface aimed squarely at terminal-comfortable
+operators. There's no analyst console in the box. Snort writes
+unified2 binary logs that some downstream pipeline
+(Barnyard2 typically, then a SIEM, then a dashboard) has to chew
+through before anyone sees an alert. Operators who want a UI pick
+between SecurityOnion (an entire Linux distribution that bundles
+Snort with half a dozen other tools), the commercial Snort Cloud
+offering from Cisco, or some homegrown stack.
+
+The shape of \nidsname{}'s signature engine borrows from Snort,
+but two things differ. The match specification is JSON instead of
+a custom DSL, and it's editable from the UI rather than a text
+file in \file{/etc/snort/}. And the analyst console ships
+in the same binary as the detection engine instead of being
+somebody else's problem.
+
+\section{Suricata}
+\label{sec:rw-suricata}
+
+The number-two engine in the open-source NIDS world is
+\textbf{Suricata}~\cite{suricata}. The Open Information Security
+Foundation (OISF) started it in 2009 with a clean-slate
+multi-threaded rewrite of the same ideas Snort had pioneered a
+decade earlier. The trick the OISF pulled was making Suricata
+read Snort rules (with a few extensions of its own), so the rule
+ecosystem is shared --- if you write detection for one engine you
+get the other almost for free.
+
+Three things make Suricata interesting from an engineering angle.
+First, threads: it scales close to linearly with CPU cores out of
+the box, where Snort needed serious tuning to do the same.
+Second, protocol parsing: HTTP, TLS, SSH, SMB and DNS are decoded
+before the matching happens, so a rule can fire on parsed
+fields (\code{tls.sni}, \code{http.uri}) rather than raw
+payload bytes. Third, the Eve log format --- one JSON object per
+event, structured, easy for downstream SIEMs to ingest. Compared
+to Snort's unified2 binary blob, that's a real quality-of-life
+upgrade.
+
+Like Snort, though, Suricata is a daemon. OISF publishes Scirius
+on the side for rule management and a separate community project
+EveBox for alert browsing, but the engine itself ships without an
+analyst-facing UI.
+
+I borrowed Suricata's structured-logging idea --- JSON in,
+JSON out, no binary intermediates --- but stopped short of the
+protocol-aware matching it's famous for. The rule vocabulary in
+\nidsname{} works at the TCP/UDP/ICMP level on headers and
+payloads, which covers the validation scenarios (port scans,
+brute-force attempts, simple floods, content-based exploits).
+What it can't do is the parser-level matching that's needed for
+HTTP request smuggling, TLS-fingerprint analysis or DNS
+tunnelling --- those would require pulling in a stateful
+protocol parser layer, which is its own project.
+
+\section{Zeek}
+\label{sec:rw-zeek}
+
+\textbf{Zeek}~\cite{paxson1999bro} (the project everyone still
+calls Bro, two decades after Vern Paxson started it under that
+name) belongs to a different category altogether. Snort and
+Suricata are pattern matchers. Zeek is a programming environment
+for the network. Operators write scripts in Zeek's own scripting
+language and hang them on events the engine emits ---
+\code{connection\_established}, \code{http\_request},
+\code{dns\_request}, and a long list of others --- and the
+scripts decide what to log. Out of the box the engine doesn't
+produce ``alerts'' in the Snort sense. It produces structured
+log streams (\file{conn.log}, \file{http.log}, \file{dns.log},
+and dozens more) and leaves the detection logic to whatever the
+operator scripts or to a downstream SIEM.
+
+That design is why threat-hunters love it. If your job is asking
+exploratory questions of the traffic record --- ``which hosts
+talked to this domain in the last 30 days, on what ports, with
+what user-agent strings?'' --- Zeek is the right answer. Its
+logs are also the de-facto input format for academic ML-IDS
+research. CICIDS2017 and IOT-23, the datasets every recent
+paper benchmarks against, ship Zeek log bundles alongside the
+raw PCAP.
+
+\nidsname{} doesn't try to compete in this space. The audience
+this project targets isn't the researcher who wants to script
+arbitrary queries over weeks of traffic. It's the operator who
+wants the console to say ``alert fired, here it is, here are
+the packets that produced it, what do you want to do''. The two
+tools could live next to each other in a real deployment ---
+Zeek doing the forensic logging, \nidsname{} doing the
+real-time alerting --- without overlap.
+
+\section{Wazuh}
+\label{sec:rw-wazuh}
+
+\textbf{Wazuh}~\cite{wazuh} sits a tier up the stack. It
+grew out of OSSEC --- the long-running host-based IDS --- and
+added a central manager, a Kibana-based console and a pile of
+integrations with external network engines. The detection that
+Wazuh itself does is primarily host-side: log analysis, file
+integrity monitoring, vulnerability assessment, audit-rule
+matching. For network-layer detection it relies on a sidecar
+that ingests alerts from Snort or Suricata --- Wazuh aggregates
+and dashboards them, but it doesn't generate them.
+
+What Wazuh ships is a full operations console: rule management,
+incident queues, agent administration, configurable dashboards
+on top of Elasticsearch (or its OpenSearch fork). All of it is
+production-grade. The price you pay is infrastructure footprint.
+A minimal Wazuh single-node deployment wants several gigabytes
+of RAM just to keep the search index responsive, and the
+recommended cluster setup runs three to five nodes.
+
+\nidsname{} differs from Wazuh in the same way a single-binary
+SQLite app differs from a clustered PostgreSQL deployment: by an
+order of magnitude in setup complexity. Wazuh would be the right
+choice for an enterprise. \nidsname{} is the right choice for a
+laptop demo or a small-network deployment where the SIEM is allowed
+to be one process and one database file.
+
+\section{Splunk Enterprise Security}
+\label{sec:rw-splunk}
+
+The benchmark in the commercial SIEM market is
+\textbf{Splunk Enterprise Security}. Architecturally it works
+much like Wazuh --- agents on hosts feed events into a central
+indexer; analysts query that indexer from a web console;
+saved correlation searches roll up matched events into
+``notable events'' that feed an incident queue. What separates
+Splunk is the polish of the analyst experience. When IBM QRadar
+or Microsoft Sentinel get reviewed in trade press, the comparison
+is almost always against Splunk.
+
+The cost of that polish is the other reason Splunk gets talked
+about. Licensing is volume-priced --- you pay per gigabyte of
+data ingested per day --- and even a single-instance ES
+deployment lands in five-figure annual budgets. There is a free
+Splunk Free tier, but it caps ingest at 500\,MB per day and
+doesn't include the Enterprise Security app at all.
+
+So \nidsname{} is not in the same market. It sits at the
+opposite end of the spectrum: free, self-hosted, single binary,
+for environments where the budget is zero and the deployment
+needs to take minutes instead of weeks.
+
+\section{Academic Machine-Learning IDS}
+\label{sec:rw-ml-academia}
+
+The published machine-learning IDS literature is, as discussed in
+Section~\ref{sec:bg-ml}, vast. The bulk of it consists of papers
+that propose a particular classifier architecture (a deep neural
+network, a gradient-boosted ensemble, an autoencoder, a transformer)
+and evaluate it on a standardised dataset. The two most-cited
+datasets in recent work are
+\textbf{NSL-KDD}~\cite{tavallaee2009detailed} (a cleaned version of
+the 1999 KDD Cup dataset) and
+\textbf{CICIDS2017}~\cite{sharafaldin2018cicids} (a more recent
+dataset from the Canadian Institute for Cybersecurity).
+
+The Sommer and Paxson critique~\cite{sommer2010outside} is now
+fifteen years old but remains relevant. They argue, persuasively,
+that the closed-world assumption of standard machine-learning
+evaluation does not transfer to operational network security. A
+classifier that scores 0.99 F1 on NSL-KDD is not necessarily a
+useful production tool, because the distribution of normal traffic
+in NSL-KDD is not the distribution of normal traffic on any real
+network. Sommer and Paxson recommend three concrete safeguards:
+prefer anomaly detection over misuse detection for the ML
+component, give the operator a clear explanation of why each alert
+fired, and keep the ML engine in a supporting role behind a
+signature engine.
+
+\nidsname{} explicitly adopts all three recommendations. Isolation
+Forest is offered as a first-class option for operators who lack
+labelled attack data; every alert is tagged with its detection
+method; and the hybrid category is the high-confidence one,
+implicitly demoting the ml-only category to a ``second opinion''
+role.
+
+\section{Positioning of This Work}
+\label{sec:rw-positioning}
+
+The position \nidsname{} occupies is most easily summarised in a
+feature matrix; Table~\ref{tab:positioning} reproduces the
+comparison from the presentation deck.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Feature comparison of \nidsname{} against related tools.
+``$\checkmark$'' indicates the feature is present out of the box,
+``$\sim$'' indicates partial or plugin-based support, ``--''
+indicates the feature is outside the tool's scope, and ``$\times$''
+indicates the feature is absent.}
+\label{tab:positioning}
+\begin{tabular}{l c c c c c c}
+\toprule
+                              & Snort & Suricata & Zeek & Wazuh & Splunk ES & \textbf{Ovidius NIDS} \\
+\midrule
+Signature engine              & $\checkmark$ & $\checkmark$ & $\sim$ & $\sim$  & $\sim$  & $\checkmark$ \\
+ML engine                     & $\times$     & $\times$     & $\times$ & $\sim$  & $\checkmark$ & $\checkmark$ \\
+Hybrid label                  & --           & --           & --     & $\times$ & $\times$ & $\checkmark$ \\
+Built-in analyst UI           & $\times$     & $\times$     & $\times$ & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+Per-alert PCAP                & $\times$     & $\times$     & $\times$ & $\times$ & $\times$ & $\checkmark$ \\
+Real-time stream UI           & $\times$     & $\times$     & $\times$ & $\sim$   & $\checkmark$ & $\checkmark$ \\
+Editable rules from UI        & $\times$     & $\times$     & $\times$ & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+One-click deploy (Win/Mac/Linux)& $\times$   & $\times$     & $\times$ & $\times$ & $\times$ & $\checkmark$ \\
+Self-hostable                 & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\sim$ & $\checkmark$ \\
+Free / open-source            & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\times$ & $\checkmark$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The differentiators that matter for a thesis-scale project, and that
+no other tool in the table provides simultaneously, are:
+
+\begin{itemize}
+  \item Detection, ML, forensics and UI in a single binary.
+  \item Per-alert packet capture as a core feature rather than a
+    bolt-on integration.
+  \item One-click deployment with no infrastructure dependencies.
+  \item Hybrid alert labelling that distinguishes signature, ML and
+    cooperative detection visually.
+\end{itemize}
+
+The trade-off is scale. \nidsname{} is not built to inspect
+multi-gigabit traffic on a forty-core appliance; it is built to
+run on a laptop and demonstrate the cooperation of the three
+engines on real packets. That is the niche, and the comparison
+table makes it explicit.

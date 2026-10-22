@@ -1,0 +1,88 @@
+% ============================
+%   3. Related work
+% ============================
+\section{Related work}
+\label{sec:related_work}
+
+\subsection{Production-grade NIDS}
+
+\textbf{Snort}~\cite{roesch1999snort} is the original lightweight
+signature IDS and remains the de-facto reference. Its strengths are
+maturity, a vast rule ecosystem (Emerging Threats, Talos), and a
+permissive license. Its main shortcoming for the use case targeted here
+is that it is a console-only daemon: integrating Snort into an analyst
+workflow requires either a commercial console (Snort Cloud) or a third
+party such as SecurityOnion.
+
+\textbf{Suricata}~\cite{suricata} re-engineered Snort for multi-threaded
+operation and added protocol-aware parsing. It remains rule-driven and,
+like Snort, ships no built-in dashboard.
+
+\textbf{Zeek (formerly Bro)}~\cite{paxson1999bro} occupies a different
+niche: it logs richly-structured events about every flow and lets
+operators write detection logic in a scripting language. It is widely
+used in research but, again, has no embedded analyst UI.
+
+The common gap shared by all three is forensic context: alerts are
+emitted with timestamp and 5-tuple, but the raw packets that triggered
+them are typically not retained. Operators bolt on full packet capture
+(tcpdump, Moloch/Arkime) to fill that gap. \nidsname{} treats forensics
+as a first-class concern of the detection engine itself.
+
+\subsection{Machine-learning IDS}
+
+The literature on applying machine learning to intrusion detection is
+vast; recent surveys list hundreds of distinct
+proposals~\cite{buczak2016survey,khraisat2019survey}. Most of this work
+focuses on benchmark accuracy on synthetic datasets:
+KDD'99~\cite{tavallaee2009detailed}, the cleaned NSL-KDD, and more
+recent dataset releases such as CICIDS2017~\cite{sharafaldin2018cicids}.
+
+A persistent critique of this line of research is that benchmark
+accuracy does not transfer to operational deployment. Sommer and
+Paxson~\cite{sommer2010outside} argue that the closed-world assumption
+of standard ML evaluation does not hold in networking, where the
+distribution of benign traffic itself drifts continuously. They
+recommend (i) anomaly detection rather than misuse detection for the ML
+component, (ii) operator-friendly explanations of why a model fired, and
+(iii) keeping the ML engine in an advisory role behind a signature
+engine. \nidsname{} embraces all three recommendations: Isolation Forest
+is offered as a first-class option, every alert is labelled with its
+detection method, and hybrid agreement is highlighted prominently in the
+UI.
+
+\subsection{SIEM and forensics platforms}
+
+\textbf{Wazuh}, \textbf{SecurityOnion} and \textbf{Splunk} are
+fully-fledged SIEM platforms with analyst consoles. They are too large
+to deploy on a single laptop and they treat detection as an
+orchestration problem (collecting alerts from external engines) rather
+than as a unified pipeline. \nidsname{} occupies the much smaller niche
+of \textit{a single-binary teaching/demo SIEM with detection and
+forensics built in}, intentionally trading scale for clarity.
+
+\subsection{Positioning of this work}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabularx}{\textwidth}{l c c c c X}
+\toprule
+& Snort & Suricata & Zeek & ML-IDS research & \textbf{\nidsname{}} \\
+\midrule
+Signature engine            & yes & yes & partial & rare & \textbf{yes} \\
+ML engine                   & no  & no  & no      & yes & \textbf{yes (RF, IF)} \\
+Hybrid labelling            & --  & --  & --      & --  & \textbf{yes} \\
+Embedded analyst UI         & no  & no  & no      & no  & \textbf{yes} \\
+Per-alert packet capture    & no  & no  & no      & no  & \textbf{yes} \\
+Single-binary deployment    & no  & no  & no      & --  & \textbf{yes (laptop demo)} \\
+\bottomrule
+\end{tabularx}
+\caption{Positioning of \nidsname{} against existing tool categories.}
+\label{tab:positioning}
+\end{table}
+
+The intention is not to outperform mature production engines on raw
+throughput or rule count, but to demonstrate, in a single contained
+application, that the three ingredients --- signature, ML and forensics
+--- can be made to cooperate inside a tidy SIEM-style user experience.

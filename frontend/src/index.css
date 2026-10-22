@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(34,211,238,0.08), transparent 60%),
+    radial-gradient(900px 500px at 120% 10%, rgba(8,145,178,0.08), transparent 60%),
+    #050A14;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #0A1220; }
+::-webkit-scrollbar-thumb { background: #1A2D4F; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #253E6B; }
+
+/* Reusable utility classes */
+@layer components {
+  .card {
+    @apply bg-navy-900/80 border border-navy-700/70 rounded-xl shadow-lg backdrop-blur-sm;
+  }
+  .card-hover {
+    @apply transition-all hover:border-cyan-500/50 hover:shadow-glow;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full border;
+  }
+  .chip-low    { @apply bg-sky-500/10     text-sky-300     border-sky-500/40; }
+  .chip-medium { @apply bg-amber-500/10   text-amber-300   border-amber-500/40; }
+  .chip-high   { @apply bg-orange-500/10  text-orange-300  border-orange-500/40; }
+  .chip-critical { @apply bg-red-500/15  text-red-300     border-red-500/50 animate-pulseBorder; }
+
+  .btn { @apply inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors; }
+  .btn-primary { @apply bg-cyan-500 hover:bg-cyan-400 text-navy-950; }
+  .btn-ghost   { @apply bg-navy-800 hover:bg-navy-700 text-slate-100 border border-navy-700; }
+  .btn-danger  { @apply bg-red-500/90 hover:bg-red-500 text-white; }
+
+  .input {
+    @apply w-full bg-navy-900 border border-navy-700 focus:border-cyan-500/60 focus:ring-0
+           text-slate-100 placeholder-slate-500 rounded-lg px-3 py-2 text-sm outline-none;
+  }
+
+  .tag-mono {
+    @apply font-mono text-xs text-slate-300 bg-navy-800 border border-navy-700 px-1.5 py-0.5 rounded;
+  }
+}

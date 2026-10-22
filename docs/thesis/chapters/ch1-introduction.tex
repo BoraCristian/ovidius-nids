@@ -1,0 +1,238 @@
+\chapter{Introduction}
+\label{chap:introduction}
+
+\section{Abstract}
+\label{sec:abstract}
+
+\subsection*{Rezumat (Limba Română)}
+
+\nidsname{} este un sistem de detecție a intruziunilor în rețea
+(NIDS), construit în jurul a trei subsisteme cooperante: un motor
+de reguli scris manual care compară pachetele cu o bază de date
+de semnături inițializată din YAML, un clasificator scikit-learn
+care scorează aceleași pachete folosind fie Random Forest
+(supervizat), fie Isolation Forest (nesupervizat), și un
+înregistrator de forensică ce păstrează un mic inel de pachete în
+jurul fiecărei alerte. Cele trei subsisteme partajează același
+event loop, aceeași reprezentare a pachetelor și același strat
+de stocare, astfel încât orice alertă conține contextul complet
+care a produs-o.
+
+Codul include un backend FastAPI cu API-uri REST și WebSocket, un
+strat asincron SQLAlchemy peste SQLite, un frontend React
+(Vite~+~TailwindCSS) și un launcher one-click pentru Windows,
+macOS și Linux. O \emph{Consolă de Atac} integrată injectează
+șase clase de atac (scan de porturi, brute-force SSH, flood ICMP,
+injecție SQL, injecție de comenzi, reverse shell) prin același
+dispatcher pe care l-ar alimenta o interfață de rețea reală.
+Latența end-to-end, de la sosirea pachetului până la notificarea
+în UI, a rămas sub 250\,ms pe un laptop de gamă medie.
+
+\subsection*{Abstract (English)}
+
+\nidsname{} is a Network Intrusion Detection System built around
+three cooperating subsystems: a hand-written rule engine that
+matches packets against a YAML-seeded signature database, a
+scikit-learn classifier that scores those same packets with
+either Random Forest (supervised) or Isolation Forest
+(unsupervised), and a forensic recorder that persists a small
+ring of packets around every alert. The three share one event
+loop, one packet representation, and one storage tier, so any
+alert carries the full context that produced it.
+
+The codebase covers a FastAPI backend with REST and WebSocket
+APIs, an asynchronous SQLAlchemy layer on top of SQLite, a React
+frontend (Vite~+~TailwindCSS), and a one-click cross-platform
+launcher. An integrated \emph{Attack Console} injects six attack
+classes (port scan, SSH brute-force, ICMP flood, SQL injection,
+command injection, reverse shell) through the same dispatcher
+path a live network interface would feed. End-to-end alert
+latency, from packet arrival to UI notification, stayed under
+250\,ms on a mid-range laptop.
+
+\subsection*{Cuvinte cheie / Keywords}
+
+\noindent\textbf{Domeniu principal / Main domain:}
+Securitatea rețelelor, Sisteme de detecție a intruziunilor (NIDS)
+\,/\, Network Security, Network Intrusion Detection.
+
+\noindent\textbf{Domenii adiacente / Adjacent domains:}
+Învățare automată, forensică digitală, dezvoltare full-stack web,
+inginerie software \,/\, Machine Learning, Digital Forensics,
+Full-Stack Web Development, Software Engineering.
+
+\noindent\textbf{Tipul lucrării / Work type:}
+Cercetare și sinteză (research and synthesis): the thesis
+combines a survey of the NIDS literature with an original
+engineering implementation evaluated through a reproducible
+synthetic-traffic methodology.
+
+\section{Motivation}
+\label{sec:motivation}
+
+There's a gap between what intrusion-detection researchers publish
+and what the people guarding actual networks deploy, and it's been
+bothering me since I started reading the papers. Pick up the
+proceedings of any recent IEEE Security and Privacy conference.
+You'll find dozens of papers throwing machine-learning models at
+the KDD'99 or CICIDS2017 datasets and reporting F1 scores so high
+you'd think the problem was solved~\cite{khraisat2019survey,
+buczak2016survey}. Then look at what a real Security Operations
+Centre runs in production. Snort signatures. Or Suricata
+signatures. Fed into a Splunk dashboard. That's it. The literature
+talks about models. The operators want
+workflows~\cite{sommer2010outside}.
+
+Why the disconnect? A signature engine emits a clear alert with
+a rule name on it. That's what an analyst needs at three in the
+morning when a Slack notification wakes them up: a name, a
+verdict, something to act on. An ML classifier hands them a
+probability score. Probabilities are harder to triage, easier
+to tune wrong, and they generate enough false alarms that
+operator trust eventually erodes. So when the two paradigms
+are framed as alternatives, signatures win on the operational
+floor every time --- whether or not they win on paper.
+
+I didn't want to pick a side. The premise of this project is
+that signatures and ML don't have to compete. They can
+cooperate. Think of it as three categories of alert. The first:
+a packet matches a high-confidence rule, end of story. The
+second: no rule matched, but the classifier scored the packet
+high enough to be suspicious --- the case where a second
+opinion is useful. The third: both engines flagged the same
+packet. That last one is the strongest signal you'll get. By
+labelling every alert with the engine that produced it, the
+console tells the analyst not just \emph{what} fired but
+\emph{why} they should care.
+
+There was a second reason I started, and it came from looking
+at the existing tools. Snort, Suricata and Zeek are good
+engines. Really good. But they're all command-line daemons.
+There's no analyst console in any of them. The alert page, the
+packet pivot, the rule editor --- everything has to be bolted
+on by the operator. On the other side of the market sit Splunk
+Enterprise Security and IBM QRadar. Beautiful UIs. But the
+licences run into five figures a year and the products don't
+even do detection themselves --- they aggregate alerts from
+external engines. So there's a gap in the middle: a single
+self-contained app, self-hostable, that does detection,
+alerting and forensics in one binary. \nidsname{} is my attempt
+at occupying that gap.
+
+A third reason was more pedagogical. A thesis is also a chance
+to show you can ship working software. I wanted a codebase
+where somebody could double-click an icon, log in with default
+credentials, and see actual alerts in their browser inside
+thirty seconds --- no wiki, no package manager, no
+infrastructure. That target shaped several decisions. SQLite
+instead of Postgres. A virtualenv instead of Docker. A built-in
+traffic simulator so the dashboard isn't empty on first boot.
+The result is a system that runs end-to-end on a laptop with
+nothing else installed. That makes it useful for academic
+demonstration, and it works fine as a starting point for
+deployment on a small network too.
+
+\section{Problem Statement}
+\label{sec:problem-statement}
+
+This thesis tries to answer three concrete engineering questions.
+
+First: \textbf{can a single application combine signature-based and
+machine-learning detection in a way that makes the cooperation
+visible?} Most existing systems either run one or the other. A few
+run both, but in parallel silos with no shared output schema. I
+wanted alerts to carry an explicit \emph{detection method} label
+--- ``signature'', ``ml'' or ``hybrid'' --- and I wanted the
+hybrid label to be earned, not assigned. Both engines have to
+flag the same packet for it.
+
+Second: \textbf{can the system keep enough context per alert that
+an analyst can investigate without reaching for an external packet
+sniffer?} The canonical workflow when an alert fires is ``what
+packets led to this?''. In a normal NIDS deployment the operator
+opens a separate full-packet-capture tool --- tcpdump, Moloch
+(now Arkime), Wireshark --- and correlates by timestamp and
+5-tuple. That's two consoles, two indexing layers, and a lot of
+chances to get the correlation wrong. I wanted that whole step
+removed. Every alert should show up with the last fifty packets
+attached, downloadable from the same UI that displayed the alert.
+
+Third: \textbf{can the whole thing be deployed without
+infrastructure expertise?} A familiar failure mode of academic
+prototypes is that they need a graduate-level setup procedure
+before they'll even start. I set myself a hard requirement:
+someone who isn't a developer should be able to launch the entire
+stack with a single double-click on Windows, macOS or Linux,
+without installing dependencies by hand.
+
+\section{Contributions}
+\label{sec:contributions}
+
+The contributions of this thesis are:
+
+\begin{enumerate}
+  \item A modular detection pipeline (see Chapter~\ref{chap:design},
+        Section~\ref{sec:design-detection}) in which signature
+        evaluation and ML scoring run on the same packet stream and
+        produce three explicit alert categories. The merge logic is
+        contained in a single method, \code{Dispatcher.\_evaluate},
+        roughly twenty lines long.
+  \item A YAML-seeded rule store that is also editable live through
+        the UI without restarting the engine. The rule compilation
+        step (Section~\ref{sec:design-signature}) builds an in-memory
+        list of compiled match predicates which is hot-swapped whenever
+        the database changes.
+  \item A per-alert JSONL ring-tail capture and a UI page that lets the
+        analyst replay the packets and download the file via an
+        authenticated endpoint
+        (Section~\ref{sec:design-forensics}). The capture is line-
+        delimited rather than libpcap-formatted so the analyst can read
+        it in any text editor.
+  \item A React analyst console
+        (Section~\ref{sec:design-frontend}) with eight pages: Login,
+        Dashboard, Alerts, Alert Detail, Rules, ML Models, Forensics,
+        Attack Console and Settings. Live updates use two WebSocket
+        channels (\file{/ws/alerts} and \file{/ws/traffic}) which
+        survive page navigation by being scoped to the shared layout
+        component.
+  \item An integrated \emph{Attack Console}
+        (Section~\ref{sec:design-attack-console}) that exposes six
+        attack types (Nmap scan, SSH brute-force, ICMP flood, SQL
+        injection, command injection, reverse shell) as buttons in the
+        UI. Each invocation injects a small burst of synthetic packets
+        through the dispatcher exactly as a live capture would, returns
+        the number of alerts generated and gives instant audience
+        feedback during demonstration.
+  \item A one-click cross-platform launcher
+        (Section~\ref{sec:design-launcher}) which creates a Python
+        virtual environment, installs both the Python and Node
+        dependencies, starts FastAPI and Vite as supervised
+        subprocesses, waits for both to be reachable, opens the browser
+        and handles \verb|Ctrl+C| with an idempotent shutdown routine.
+  \item A validation methodology (Chapter~\ref{chap:validation})
+        that drives the entire attack catalogue through the
+        dispatcher and measures the alerts generated per attack
+        kind, the latency from injection to notification, and the
+        agreement between the signature and machine-learning
+        engines.
+\end{enumerate}
+
+\section{Thesis Structure}
+\label{sec:thesis-structure}
+
+The rest of the thesis is organised like this.
+
+Chapter~\ref{chap:background} covers the theory I needed: NIDS as
+a discipline, signature versus anomaly paradigms, the two ML
+algorithms I picked, and the forensic idea that ties everything
+together. Chapter~\ref{chap:technologies} walks through the
+specific technologies in the stack and why each one ended up
+there. Chapter~\ref{chap:related-work} positions the project
+against the production-grade tools (Snort, Suricata, Zeek, Wazuh,
+Splunk ES) and the published ML-IDS research.
+Chapter~\ref{chap:design} is the big technical chapter; it works
+through every component of the implementation with file
+references and code listings. Chapter~\ref{chap:validation}
+describes the validation methodology and reports the latency and
+accuracy numbers I collected. Chapter~\ref{chap:conclusions}
+wraps up with what got done and what's left for future work.

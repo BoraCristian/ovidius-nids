@@ -1,0 +1,459 @@
+\chapter{Technologies and Theoretical Elements Used}
+\label{chap:technologies}
+
+This chapter describes the specific technologies that ended up in
+\nidsname{}'s stack and the reasoning behind each choice. The list is
+long because the project spans backend, frontend, machine learning,
+packet capture and packaging. Each section is self-contained and may
+be read in any order.
+
+\section{Python}
+\label{sec:tech-python}
+
+The whole backend runs on \textbf{Python}~\cite{python} 3.12. I
+picked the version deliberately: the launcher refuses anything
+newer than 3.13 because scikit-learn and numpy did not yet ship
+Windows wheels for 3.14 at the time I started this work, which
+would have forced a source build needing the Visual~C++ build
+tools --- a seven-gigabyte detour every evaluator of this thesis
+would have hit on a fresh Windows laptop. \file{run.py} checks the
+interpreter version on the first banner line and prints an
+upgrade path when the check fails; I added that gate the day I
+watched a friend spend forty minutes trying to compile numpy from
+source on 3.14.
+
+Three reasons drove the language choice. The first is the
+scientific Python stack. \code{from sklearn.ensemble import
+RandomForestClassifier} on line one of a file is hard to beat
+when the alternative is linking against a C++ library and
+maintaining a binding layer. The second is asyncio. Python's
+async primitives in 3.11+ are mature enough to host a real-time
+event loop without dropping into threads everywhere, and FastAPI
+is built directly on that substrate, so the entire packet
+pipeline can stay in one coroutine context. The third is
+pedagogical: Python is the language students at my faculty read
+fluently, and a defence committee evaluating the thesis should
+not have to learn a new syntax to follow the code.
+
+The codebase uses type hints throughout (\code{from \_\_future\_\_ import
+annotations}) and validated by static review rather than a strict type
+checker. The annotations are not enforced at runtime by mypy because
+the project does not currently require that discipline, but the
+information is present for any future developer who wants to add it.
+
+\section{FastAPI}
+\label{sec:tech-fastapi}
+
+The REST and WebSocket surface of \nidsname{} is served by
+\textbf{FastAPI}~\cite{ramirez2022fastapi}, the asynchronous Python
+framework Sebastián Ramírez published in 2018. Under the hood
+FastAPI stacks on top of \textbf{Starlette} (the ASGI toolkit
+that handles raw HTTP and WebSocket plumbing) and
+\textbf{Pydantic} (the runtime validation library used for every
+request and response body in the project).
+
+I evaluated Flask, Django and aiohttp before settling on FastAPI.
+What pushed me to commit was four properties, in roughly this
+order. The dependency-injection system came first. Every
+protected route in the codebase carries
+\code{Depends(get\_current\_user)} on its signature, and the
+framework handles JWT decoding, the database lookup and the
+401 emission without a line of boilerplate inside the route
+body --- one of the few cases in Python where a decorator
+genuinely earns its keep. Then the auto-generated OpenAPI
+documentation at \file{/docs}: zero configuration, every endpoint
+browsable and testable from the Swagger UI in the browser. I used
+this constantly during development to fire test requests at
+the alerts filter and the WebSocket auth without ever writing
+curl commands. Third, the Pydantic~v2 integration; request and
+response bodies are declared as typed classes and the framework
+moves JSON across the wire as Python objects with validation on
+both sides. Fourth, the asynchronous-by-default story --- every
+endpoint in \nidsname{} is an \code{async def} function and the
+WebSocket handlers share the same event loop as the dispatcher,
+which mattered more than I expected once the live packet stream
+started filling up the loop.
+
+FastAPI runs under \textbf{Uvicorn} in development, with the
+\code{--reload} flag so saving a Python file restarts the server. In
+production a process manager (gunicorn with the
+\code{uvicorn.workers.UvicornWorker} class) would be more appropriate,
+but the thesis scope does not include production deployment.
+
+\section{SQLAlchemy 2 (Asynchronous)}
+\label{sec:tech-sqlalchemy}
+
+Persistence in \nidsname{} goes through
+\textbf{SQLAlchemy~2}~\cite{sqlalchemy}, the major release that
+unified the older session and core APIs around the
+async-capable \code{AsyncSession}. The async story matters here
+because the dispatcher and every API route are coroutines, and
+mixing synchronous SQLAlchemy calls into that pipeline would
+either block the event loop or force a thread pool I do not
+want to maintain.
+
+The data model is declared with the modern typed-mapping syntax in
+\file{backend/app/models/}, one file per table. Each model uses
+\code{Mapped[T]} annotations for SQLAlchemy 2 type inference. For
+example, the \code{Alert} table is declared with fields like:
+
+\begin{lstlisting}[style=pyfile,caption={Excerpt from backend/app/models/alert.py},label={lst:tech-alert-model}]
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id:        Mapped[int]       = mapped_column(primary_key=True)
+    ts:        Mapped[datetime]  = mapped_column(default=lambda: datetime.now(timezone.utc))
+    severity:  Mapped[str]       = mapped_column(String(16))
+    category:  Mapped[str]       = mapped_column(String(64))
+    detection_method: Mapped[str] = mapped_column(String(16))
+    ml_score:  Mapped[float|None] = mapped_column(Float, nullable=True)
+    # ... and so on
+\end{lstlisting}
+
+The asynchronous engine is created once at boot in
+\file{backend/app/core/database.py} and wrapped in an
+\code{async\_sessionmaker} so every request can pull a fresh session.
+The \code{get\_db} dependency yields the session and closes it in a
+\code{finally} block, which guarantees no session leaks even if an
+endpoint raises.
+
+\section{aiosqlite and SQLite}
+\label{sec:tech-sqlite}
+
+Storage lives in \textbf{SQLite}~\cite{sqlite} talked to through
+the asynchronous \textbf{aiosqlite} driver. Picking SQLite for a
+SIEM-style application is the unusual call here --- the textbook
+answer is PostgreSQL --- and I want to be honest about why I
+made it. One overriding reason: deployment cost. SQLite is a
+single file on disk. There is no separate server to install, no
+\code{pg\_hba.conf} to configure, no backup cron, no port to
+expose. For the actual deployment target of this thesis (a
+laptop running an academic demo, plus the future small-network
+template the codebase implies) the trade-off is correct. For a
+production SOC swallowing thousands of alerts a minute SQLite
+would be the wrong answer, and the SQLAlchemy abstraction makes
+the swap to Postgres a one-line URL change.
+
+SQLite has one architectural quirk worth mentioning: it serialises
+writes (only one writer can hold the database lock at a time). Under
+the synthetic traffic load used during development (24--40 packets
+per second, with occasional attack bursts of 60--90 packets) this is
+not a bottleneck. Even under the heaviest synthetic scenario (the
+ICMP flood from the Attack Console, which generates upwards of
+ninety packets per burst), the writes are batched at the alert
+level rather than the packet level, so the load on SQLite is
+still measured in tens of writes per second.
+
+\section{Pydantic v2}
+\label{sec:tech-pydantic}
+
+The validation boundary between JSON on the wire and Python
+objects in the route handlers is owned by
+\textbf{Pydantic~v2}~\cite{pydantic}. Each request and response
+schema lives in \file{backend/app/schemas/}, declared as a typed
+class --- one model per resource, named after it
+(\code{AlertOut}, \code{RuleIn}, \code{MLTrainRequest}). The
+framework checks every payload at runtime and either coerces it
+into the model or replies with a 422 carrying a precise error
+trail down to the offending field, which removed about half the
+error-handling boilerplate I would otherwise have written by
+hand.
+
+A small but important Pydantic detail: response models with
+\code{model\_config = ConfigDict(from\_attributes=True)} can be built
+from SQLAlchemy ORM instances directly. The endpoint code reads:
+
+\begin{lstlisting}[style=pyfile]
+@router.get("/alerts/{alert_id}", response_model=AlertOut)
+async def get_alert(alert_id: int, db: AsyncSession = Depends(get_db)) -> AlertOut:
+    row = (await db.execute(select(Alert).where(Alert.id == alert_id))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(404, "Alert not found")
+    return AlertOut.model_validate(row)
+\end{lstlisting}
+
+\noindent which is essentially as concise as the equivalent operation
+in any modern Python ORM-based framework.
+
+\section{scikit-learn}
+\label{sec:tech-sklearn}
+
+The machine-learning side of the project sits on top of
+\textbf{scikit-learn}~\cite{pedregosa2011scikit}. I touch a small
+slice of the library: \code{RandomForestClassifier} and
+\code{IsolationForest} from \code{sklearn.ensemble}, plus four
+metrics (\code{accuracy\_score}, \code{precision\_score},
+\code{recall\_score}, \code{f1\_score}) from
+\code{sklearn.metrics}. The training data is synthesised inside
+the detector itself in
+\file{backend/app/engine/ml\_detector.py} with numpy and a
+seeded random generator
+(\code{numpy.random.default\_rng(42)}) so that the same
+training session reproduces the same model bit-for-bit on any
+machine that runs the project. Trained artefacts are pickled
+with \code{joblib.dump} into
+\file{backend/data/models/*.joblib} and loaded lazily by
+\code{joblib.load} when the operator activates them from the UI.
+
+The two algorithms share a common \code{score(pkt) ->
+(label, score)} interface, so the dispatcher does not need to know
+which one is running. The \code{is\_anomaly} flag on the detector
+state distinguishes the two cases at inference time: for Random
+Forest the score is \code{predict\_proba()[0][1]}; for Isolation
+Forest it is the negative of \code{decision\_function()[0]}.
+
+\section{Scapy}
+\label{sec:tech-scapy}
+
+For live packet capture I use \textbf{Scapy}~\cite{scapy}. The
+library wraps the platform's raw-socket facility (libpcap on
+Linux and macOS, Npcap on Windows) and presents each captured
+frame as a stack of Python objects, one per protocol layer. The
+project hits this surface in two places.
+
+First, the \code{LiveSniffer} class in
+\file{backend/app/engine/sniffer.py} calls \code{sniff()} on a
+background thread and converts each captured frame to the internal
+\code{Packet} dataclass. The conversion extracts source and
+destination IPs from the IP layer, source and destination ports from
+the TCP or UDP layer (or zero for ICMP), TCP flags as a
+comma-separated string (\code{"S,A"} rather than the raw integer
+\code{0x12}), and the payload bytes from the \code{Raw} layer if
+present.
+
+Second, the project ships an optional BPF filter. The
+\code{SNIFFER\_BPF\_FILTER} environment variable is applied at
+capture time by \code{sniff()} so uninteresting traffic is
+dropped before reaching the dispatcher. The expression follows
+the standard tcpdump syntax (e.g.\ \code{"tcp or icmp"} or
+\code{"port not 5353"}) and can be left empty to capture
+everything.
+
+Scapy's dependency on a platform packet driver is the source of most
+deployment friction. On Linux the kernel exposes raw sockets to
+processes that have the \code{CAP\_NET\_RAW} capability, so a
+non-root user can capture if the binary is granted the capability
+with \code{setcap}. On Windows the user must install Npcap (a
+five-megabyte installer from \href{https://npcap.com}{npcap.com}) and
+run the launcher with administrator privileges. The project handles
+the missing-Scapy case gracefully: if the import fails, the
+\code{TrafficSimulator} is used unconditionally regardless of the
+\code{SIMULATE\_TRAFFIC} setting.
+
+\section{NumPy}
+\label{sec:tech-numpy}
+
+\textbf{NumPy}~\cite{numpy} is the numerical library underlying
+scikit-learn. \nidsname{} uses NumPy directly only in the feature
+extraction path inside the ML detector, where each captured
+\code{Packet} is converted to a six-dimensional \code{np.ndarray}
+before being passed to \code{model.predict()}. The arrays are
+constructed with \code{dtype=float} so that the dispatcher does not
+incur a copy when scikit-learn validates the input shape.
+
+\section{React 18}
+\label{sec:tech-react}
+
+The analyst console is a \textbf{React~18}~\cite{react}
+single-page application, navigated by React Router. State lives
+in two places: React Context (authentication and the two live
+WebSocket streams, both mounted at the Layout level) and
+component-local \code{useState} hooks for everything else. No
+Redux, no Zustand, no MobX --- the data shape is small enough
+that adding a state-management library would have been weight
+for its own sake.
+
+I picked React over Vue, Svelte and Angular for an unglamorous
+reason: familiarity. The data flow here is the canonical SPA
+loop (server pushes JSON, client renders it), and any of the
+four frameworks would have produced an equivalent dashboard.
+What tipped the decision was the depth of the React ecosystem
+around the two pieces I knew I needed --- a charting library and
+an icon set. Both happen to be Recharts and lucide-react below,
+and both were one \code{npm install} away.
+
+One React~18 feature the project actually leans on is concurrent
+rendering through Suspense boundaries on the main routes. With
+that in place the console stays responsive to clicks and
+keystrokes even while a slow \code{fetch} is in flight against
+the backend, which became visible the first time I hit
+\code{/api/alerts?limit=500} on a hot SQLite database.
+
+\section{Vite}
+\label{sec:tech-vite}
+
+The frontend's dev server and production bundler is
+\textbf{Vite}~\cite{vite}, written by Evan You (the same author
+behind Vue). For new React projects Vite has been steadily
+displacing the older Create-React-App + webpack pair, and the
+reason is its dev-time architecture: instead of bundling the
+whole app on every save, Vite serves each module as a separate
+HTTP request and lets the browser's own ES-module loader chase
+the dependency graph. The practical consequence is hot reloads
+under a hundred milliseconds even on a project the size of the
+analyst console. I noticed the difference the first time I came
+back from working on a webpack project --- it stops feeling like
+``save and wait'' and starts feeling like ``save and look''.
+
+The Vite configuration for this project is minimal: a single
+\code{vite.config.js} file with the React plugin and a proxy entry
+that forwards \file{/api/} and \file{/ws/} to the FastAPI backend on
+port 8000 during development. Production builds emit a static
+\file{dist/} directory which could be served by any static-file web
+server.
+
+\section{TailwindCSS}
+\label{sec:tech-tailwind}
+
+The visual identity of the console is delivered by
+\textbf{TailwindCSS}~\cite{tailwind}. The design language is
+narrow on purpose: a deep navy background (\code{0A1220}), a
+cyan primary accent (\code{22D3EE}), and three semantic
+highlights --- fuchsia for ML-related state, amber for warnings
+and attack-console interactions, and red for critical alerts.
+Tailwind's utility-class approach lets me compose that palette
+directly in the JSX markup; there is no parallel
+\code{*.module.css} hierarchy to keep in sync with the
+component tree.
+
+I extended the default palette in \file{tailwind.config.js} with
+three custom navy shades (\code{navy-850}, \code{navy-900},
+\code{navy-950}) so the components can refer to named tokens
+instead of raw hex strings. The final production stylesheet
+weighs about twenty kilobytes gzipped --- small enough that the
+console feels instantaneous over any network worth measuring.
+
+\section{Recharts}
+\label{sec:tech-recharts}
+
+\textbf{Recharts}~\cite{recharts} is the React-native charting
+library that draws the four charts on the dashboard: the live
+packet-rate area chart, the severity distribution pie, the alert
+timeline bar chart and the detection-method pie. The library renders
+SVG under the hood and supports declarative composition --- a chart
+is a tree of React components rather than a single black-box
+configuration object, which makes it natural to override colours and
+tooltip styling per-chart.
+
+A small subtlety I had to resolve was the default chart animation,
+which caused the live packet-rate area to wiggle every second as
+Recharts interpolated between the old and new data series. Setting
+\code{isAnimationActive=\{false\}} on the \code{Area} component, plus
+\code{type="linear"} and \code{dot=\{false\}}, produced the stable
+left-shifting curve I wanted.
+
+\section{lucide-react}
+\label{sec:tech-lucide}
+
+\textbf{lucide-react} is the icon library --- a React port of the
+Lucide icon set, itself a community fork of the original Feather
+Icons. The icons are SVG-based, tree-shakeable (only the icons
+actually imported are included in the final bundle) and visually
+consistent because they share a single stroke style. Every button,
+chip and badge in the console uses lucide icons.
+
+\section{date-fns}
+\label{sec:tech-datefns}
+
+\textbf{date-fns}~\cite{datefns} formats the timestamps shown in the
+UI. It was preferred over Moment.js (now in maintenance mode) and
+Day.js (a Moment-compatible alternative) because date-fns is purely
+functional, tree-shakeable, and the single \code{format} import is
+enough for every place a timestamp appears.
+
+\section{WebSocket Protocol}
+\label{sec:tech-websocket}
+
+\textbf{WebSocket}~\cite{ietf6455} (RFC 6455) is the bidirectional
+streaming protocol that delivers live updates from the backend to
+the analyst console. The two endpoints are \file{/ws/alerts} (each
+new alert is pushed as a single JSON message) and \file{/ws/traffic}
+(packet metadata batched in groups of up to 50 every 500\,ms to
+keep the dashboard chart fluid without overwhelming the
+network).
+
+Authentication is handled through a token in the query string
+because browser WebSocket clients cannot set custom request
+headers --- this is a deliberate restriction of the standard. The
+token is the same JWT used by the REST endpoints, and the
+\code{ws/alerts.py} handler decodes it before subscribing the
+connection to the alert bus.
+
+\section{JWT and bcrypt}
+\label{sec:tech-auth}
+
+The authentication subsystem is built on two pieces.
+\textbf{JSON Web Tokens (JWT)}~\cite{jwt} encode the signed-in user's
+identity and role; the backend signs them with the HS256 symmetric
+algorithm using the secret stored in
+\file{backend/.env}. \textbf{bcrypt}~\cite{bcrypt} hashes user
+passwords before they are stored. I deliberately removed the older
+\code{passlib} library from the dependencies because passlib's
+maintenance has lapsed and it does not work cleanly with the modern
+bcrypt 4.x and 5.x releases that probe the \code{\_\_about\_\_.\_\_version\_\_}
+attribute. Calling \code{bcrypt.hashpw} and \code{bcrypt.checkpw}
+directly from \file{backend/app/core/security.py} avoids that whole
+problem.
+
+\section{Joblib}
+\label{sec:tech-joblib}
+
+\textbf{joblib}~\cite{joblib} is the persistence layer for the
+trained machine-learning models. It is a thin wrapper around pickle
+with optimised handling for large NumPy arrays --- the kind of
+data structure a Random Forest with 200 trees produces. Each
+trained model is saved to \file{backend/data/models/} with a name
+that includes the timestamp, so re-training never overwrites a
+previous artefact.
+
+\section{PyYAML}
+\label{sec:tech-yaml}
+
+\textbf{PyYAML}~\cite{pyyaml} parses the default rule file. The
+seed rules live in
+\file{backend/data/rules/default\_rules.yaml} and are loaded into the
+database the first time the application starts. The format is
+straightforward enough that an operator can edit the file by hand
+without learning the JSON match specification --- the YAML schema and
+the database match column are identical apart from the surface
+syntax.
+
+\section{Uvicorn}
+\label{sec:tech-uvicorn}
+
+\textbf{Uvicorn}~\cite{uvicorn} is the ASGI server that runs the
+FastAPI application. It is the reference implementation of the
+ASGI specification, written by Tom Christie, and has become the
+default choice for asynchronous Python web services. The launcher
+invokes it as \code{python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload};
+the \code{--reload} flag watches the file system and restarts the
+server when source files change, which is invaluable during
+development.
+
+\section{Node.js and npm}
+\label{sec:tech-node}
+
+\textbf{Node.js} is the JavaScript runtime that powers the Vite
+development server and the build pipeline. The project pins no
+specific Node version but requires 18 LTS or newer, which is what
+the major distributions and the official Node installer ship today.
+\textbf{npm} is the package manager that installs the frontend
+dependencies; it is bundled with the Node installer, so a user who
+follows the standard installation procedure has both tools
+available with no extra configuration.
+
+\section{Operating System Considerations}
+\label{sec:tech-os}
+
+The project targets three operating systems: Windows 10/11, macOS
+12+, and any reasonably recent Linux distribution. The
+cross-platform launcher (\file{run.py}) detects the host operating
+system via \code{platform.system()} and adjusts the venv path
+(\file{Scripts/python.exe} on Windows versus \file{bin/python} on
+Unix), the signal handling
+(\code{CTRL\_BREAK\_EVENT} on Windows versus \code{SIGTERM} on Unix)
+and the dependency installation procedure. The two wrappers
+(\file{run.bat} for Windows, \file{run.sh} for Unix) handle the
+shell-specific quirks --- mostly around how to invoke Python with
+the right version --- and then delegate to \file{run.py} for the
+actual logic.

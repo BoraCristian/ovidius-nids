@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Backend runtime data
+backend/nids.db
+backend/nids.db-*
+backend/data/pcaps/*
+!backend/data/pcaps/.gitkeep
+backend/data/models/*
+!backend/data/models/.gitkeep
+backend/.env
+backend/data/.secret_key
+*.log
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editors (keep the shared VS Code launch/tasks config used by F5)
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# LaTeX build artefacts (the finished PDFs are committed)
+*.aux
+*.bbl
+*.blg
+*.lof
+*.lot
+*.toc
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+# main.pdf files are byte-identical copies of the named PDFs next to them
+docs/thesis/main.pdf
+docs/presentation-beamer/main.pdf
+
+# Not for publication
+OvidiusNIDS_DVD.zip
+docs/exam-prep/

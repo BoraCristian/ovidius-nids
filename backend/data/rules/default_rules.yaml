@@ -1,0 +1,111 @@
+# Default NIDS signature set. Each entry becomes a row in the `rules` table on
+# first boot. The matcher fields are documented in backend/app/engine/signatures.py.
+
+- name: "Nmap TCP SYN scan"
+  description: "High rate of TCP SYN packets from a single host (port scan signature)."
+  category: "Reconnaissance"
+  severity: "medium"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    flags: ["S"]
+    threshold:
+      count: 8
+      seconds: 5
+      track: "src_ip"
+
+- name: "SSH brute-force attempt"
+  description: "Many TCP connections to port 22 from one source in a short window."
+  category: "Brute-Force"
+  severity: "high"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    dst_port: 22
+    flags: ["S"]
+    threshold:
+      count: 6
+      seconds: 15
+      track: "src_ip"
+
+- name: "ICMP flood (ping sweep)"
+  description: "Large number of ICMP echo requests in a short window."
+  category: "DoS"
+  severity: "medium"
+  action: "alert"
+  match:
+    protocol: "icmp"
+    threshold:
+      count: 25
+      seconds: 5
+      track: "src_ip"
+
+- name: "HTTP SQL injection pattern"
+  description: "Classic SQLi tokens in HTTP payload."
+  category: "Exploit"
+  severity: "high"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    dst_port: 80
+    regex: "(?i)(union\\s+select|or\\s+1=1|information_schema|' or '1'='1)"
+
+- name: "HTTPS with suspicious SNI"
+  description: "TLS ClientHello to a known malicious SNI placeholder (demo rule)."
+  category: "C2"
+  severity: "high"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    dst_port: 443
+    content: "bad-domain.example"
+
+- name: "Telnet cleartext login"
+  description: "Plaintext Telnet traffic indicates weak/legacy access."
+  category: "Policy"
+  severity: "low"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    dst_port: 23
+
+- name: "Large UDP packet (potential amplification)"
+  description: "Oversized UDP packets often accompany DNS/NTP amplification."
+  category: "DoS"
+  severity: "medium"
+  action: "alert"
+  match:
+    protocol: "udp"
+    min_length: 1400
+
+- name: "SMB null session probe"
+  description: "SMB traffic to port 445 from external source."
+  category: "Reconnaissance"
+  severity: "medium"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    dst_port: 445
+    threshold:
+      count: 5
+      seconds: 10
+      track: "src_ip"
+
+- name: "Possible command injection in HTTP"
+  description: "Shell metacharacters in HTTP payload."
+  category: "Exploit"
+  severity: "critical"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    dst_port: 80
+    regex: "(?i)(;|\\||\\$\\()\\s*(cat|whoami|id|wget|curl|nc)\\b"
+
+- name: "Reverse shell handshake (/bin/sh)"
+  description: "Payload contains `/bin/sh` — typical reverse shell marker."
+  category: "Exploit"
+  severity: "critical"
+  action: "alert"
+  match:
+    protocol: "tcp"
+    content: "/bin/sh"

@@ -1,0 +1,35 @@
+{
+  // NOTE: do NOT hardcode `python.defaultInterpreterPath` here — the venv lives at
+  // a different path on Windows (`backend/.venv/Scripts/python.exe`) than on
+  // Linux/macOS (`backend/.venv/bin/python`). Once you've run the app once
+  // (so the venv exists), use "Python: Select Interpreter" from the command
+  // palette and pick the interpreter inside `backend/.venv`.
+  "python.analysis.extraPaths": ["${workspaceFolder}/backend"],
+
+  // Disable venv auto-activation in new terminals — on Windows PowerShell it
+  // tries to run `...\.venv\Scripts\activate` (a bash script) instead of
+  // `Activate.ps1`, which produces the confusing "is not recognized" error.
+  // The launcher (run.py) calls the venv's python.exe directly, so we don't
+  // need the terminal to be "activated" at all.
+  "python.terminal.activateEnvironment": false,
+  "python.terminal.activateEnvInCurrentTerminal": false,
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  },
+  "search.exclude": {
+    "**/.venv": true,
+    "**/node_modules": true,
+    "**/dist": true
+  },
+  "[python]": {
+    "editor.tabSize": 4,
+    "editor.formatOnSave": false
+  },
+  "[javascriptreact]": {
+    "editor.tabSize": 2
+  },
+  "[jsx]": {
+    "editor.tabSize": 2
+  }
+}

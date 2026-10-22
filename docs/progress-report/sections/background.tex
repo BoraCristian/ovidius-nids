@@ -1,0 +1,120 @@
+% ============================
+%   2. Background
+% ============================
+\section{Theoretical background}
+\label{sec:background}
+
+\subsection{Network Intrusion Detection Systems}
+
+A Network Intrusion Detection System inspects network traffic --- either
+passively, by tapping into a SPAN port or virtual interface, or actively,
+as part of a forwarding plane (NIPS) --- and emits an alert when the
+observed packets match a model of malicious activity~\cite{garcia2009anomaly,
+buczak2016survey}. NIDS taxonomies typically split detection strategies
+along two orthogonal axes:
+\begin{description}
+    \item[Detection paradigm.] \textit{Misuse} (a.k.a.\
+        \textit{signature-based}) detection encodes known attack
+        patterns; \textit{anomaly-based} detection encodes normal
+        behaviour and reports deviations.
+    \item[Granularity.] \textit{Packet-level} detection inspects each
+        frame independently; \textit{flow-level} detection aggregates
+        packets into bidirectional 5-tuple flows before scoring.
+\end{description}
+
+\nidsname{} operates packet-level for the signature engine (rules can
+match any combination of L3/L4 fields, payload regular expressions, or
+content substrings) and per-packet for the current ML detector, with
+flow-level features (inter-arrival time, src-rate) maintained as
+streaming state. This trade-off favours real-time responsiveness over
+the larger context windows used by flow-based systems such as
+Zeek~\cite{paxson1999bro}.
+
+\subsection{Signature-based detection}
+
+The dominant open-source signature systems use a domain-specific
+language for rules~\cite{roesch1999snort,suricata}. A typical Snort rule
+is structured as a header (action, protocol, addresses, ports) followed
+by a comma-separated set of options that constrain payload content,
+session state, flow direction and so on. \nidsname{} adopts a simpler,
+JSON-based match specification (Listing~\ref{lst:rule}) which is
+expressive enough for the categories of attack the project targets
+(scans, brute-force, command injection, reverse shell, simple flood)
+without requiring users to learn a third-party DSL.
+
+\begin{lstlisting}[language=,caption={Example signature rule, stored both
+in YAML and in the database},label={lst:rule}]
+- name: "SSH brute force"
+  category: "BruteForce"
+  severity: "high"
+  match:
+    protocol: tcp
+    dst_port: 22
+    flags: "S"
+    threshold:
+      count: 10
+      window_sec: 30
+      group_by: src_ip
+  action: alert
+\end{lstlisting}
+
+\subsection{Machine learning for intrusion detection}
+
+The two algorithms exposed by \nidsname{} were chosen for their
+complementary semantics rather than for state-of-the-art performance:
+\begin{description}
+    \item[Random Forest~\cite{breiman2001random}] is a supervised
+        ensemble of decision trees trained on labelled
+        $(\text{features}, y)$ pairs. It produces calibrated probability
+        estimates, exposes per-feature importance (used to populate the
+        dashboard bar chart), and is robust to noisy or irrelevant
+        features. This makes it a natural fit for the ``second opinion''
+        role described in the introduction.
+    \item[Isolation Forest~\cite{liu2008isolation}] is an unsupervised
+        anomaly detector that recursively partitions the feature space
+        with random splits; points that require few splits to be
+        isolated are scored as anomalies. The algorithm does not require
+        labelled attack data, which matters in practice because attack
+        traffic is far rarer than benign traffic and is hard to label
+        reliably~\cite{sommer2010outside}.
+\end{description}
+
+The feature vector currently used by both algorithms is
+$[\,src\_port,\ dst\_port,\ length,\ proto\_id,\ flag\_mask,\ inter\_arrival\_ms\,]$
+--- six numeric features computed per packet, with the inter-arrival
+time maintained as streaming state keyed by source IP. This intentionally
+small vector keeps inference cheap (sub-millisecond per packet on a
+laptop) and avoids the dataset-leakage pitfalls described by Sommer and
+Paxson~\cite{sommer2010outside}, where features that encode the
+collection methodology rather than the underlying behaviour cause models
+to over-fit.
+
+\subsection{Hybrid detection}
+
+When both engines run concurrently, three alert categories are emitted:
+\begin{itemize}
+    \item \textbf{signature-only} --- the rule engine matched, the ML
+        model disagreed (label = benign).
+    \item \textbf{ml-only} --- no rule matched, the ML model scored the
+        packet above a configurable threshold (currently $0.8$).
+    \item \textbf{hybrid} --- both engines agreed. Hybrid alerts carry
+        the highest confidence and are surfaced first in the dashboard
+        triage queue.
+\end{itemize}
+This explicit labelling makes the analyst aware of \textit{why} an alert
+fired and avoids the black-box critique levelled at pure ML
+IDS~\cite{sommer2010outside}.
+
+\subsection{Forensics in a SIEM}
+
+The Security Information and Event Management acronym covers the broader
+class of systems that aggregate, correlate and present security
+events~\cite{aguilar2017siem}. In a production SIEM, forensics is
+typically delegated to an external packet capture appliance. \nidsname{}
+takes the opposite approach: every alert triggers a write of the last
+$N = 50$ packets seen by the dispatcher (kept in a circular buffer of
+size $200$) to a per-alert JSON Lines file. The file is associated with
+the alert via a foreign-key relationship in the SQLite database and is
+served back to the UI through an authenticated FastAPI endpoint. This
+brings the most common triage workflow --- ``show me what happened just
+before this alert fired'' --- into the application itself.

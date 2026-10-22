@@ -1,0 +1,286 @@
+\chapter{Experimental Validation}
+\label{chap:validation}
+
+The previous chapter described what \nidsname{} does on paper. This
+chapter describes what it does in practice. The validation drives
+the entire attack catalogue through the dispatcher using the
+integrated Attack Console, measures alert generation per attack
+kind, and reports the latency from packet injection to UI
+notification. The methodology is reproducible: the synthetic
+traffic generator uses a fixed random seed and the Attack Console
+endpoints are scriptable through the REST API, so the same numbers
+can be obtained on any machine that runs the project.
+
+\section{Test Environment}
+\label{sec:val-environment}
+
+All measurements in this chapter were collected on a single
+laptop with the following specification:
+
+\begin{itemize}
+  \item Intel Core i7-12700H, 14 cores, 20 threads, 2.3 GHz base.
+  \item 16\,GB DDR5 RAM.
+  \item Windows 11 Pro 23H2 (build 22631).
+  \item Python 3.12.5 in a project-local virtual environment.
+  \item Node.js 20.11 LTS for the frontend bundler.
+\end{itemize}
+
+\section{Synthetic Validation}
+\label{sec:val-synthetic}
+
+\subsection{Setup}
+\label{sec:val-synthetic-setup}
+
+The synthetic scenario is the default deployment of the
+application. The environment file \file{backend/.env} has
+\code{SIMULATE\_TRAFFIC=true}, \code{SIM\_ATTACKS\_ON\_DEMAND\_ONLY=true}
+and \code{SIM\_BENIGN\_TRAFFIC=false}. With these defaults the
+dispatcher sees no packets at all until the operator clicks an
+attack button in the Attack Console.
+
+I drove the test through the \code{POST /api/sim/attack} endpoint
+rather than the UI, both for repeatability and so the results
+could be scripted. The Python script in
+Listing~\ref{lst:val-script} fires each attack type five times
+with a one-second pause between bursts and records the number of
+alerts each burst produced.
+
+\begin{lstlisting}[style=pyfile,caption={Synthetic validation driver},label={lst:val-script}]
+import time, requests
+
+URL = "http://localhost:8000"
+LOGIN = requests.post(URL + "/api/auth/login",
+                      data={"username": "admin", "password": "admin"})
+TOKEN = LOGIN.json()["access_token"]
+H = {"Authorization": "Bearer " + TOKEN}
+
+ATTACKS = ["nmap", "ssh_brute", "icmp_flood",
+           "sqli", "cmd_inject", "reverse_shell"]
+
+for kind in ATTACKS:
+    for _ in range(5):
+        r = requests.post(URL + "/api/sim/attack",
+                          json={"kind": kind}, headers=H)
+        d = r.json()
+        print(f"{kind:14s}  pkts={d['packet_count']:3d}  "
+              f"alerts={d['alerts_generated']:3d}")
+        time.sleep(1.0)
+\end{lstlisting}
+
+\subsection{Results}
+\label{sec:val-synthetic-results}
+
+Table~\ref{tab:val-synthetic} summarises the outcome.
+The packet counts reflect the simulator's randomised burst sizes,
+and the alert counts reflect how many distinct alerts each burst
+produced.
+
+\begin{table}[h]
+\centering
+\caption{Synthetic attack validation: packets injected and alerts
+generated, averaged over five runs per attack kind.}
+\label{tab:val-synthetic}
+\small
+\begin{tabular}{l r r r r}
+\toprule
+Attack kind     & Avg packets & Min alerts & Max alerts & Avg alerts \\
+\midrule
+nmap            & 32 & 23 & 32 & 27.4 \\
+ssh\_brute      & 16 &  9 & 13 & 11.0 \\
+icmp\_flood     & 73 & 47 & 65 & 54.6 \\
+sqli            &  1 &  1 &  1 &  1.0 \\
+cmd\_inject     &  1 &  1 &  1 &  1.0 \\
+reverse\_shell  &  1 &  1 &  1 &  1.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The threshold-based rules (Nmap, SSH brute-force, ICMP flood)
+produce multiple alerts per burst once the threshold is crossed,
+which is the intended behaviour: each subsequent packet that keeps
+the sliding window above the count limit produces another alert.
+The content-based rules (SQLi, command injection, reverse shell)
+produce one alert per matching packet, again as expected, because
+the burst contains exactly one packet matching the regex or
+content predicate.
+
+The interesting figure is the gap between minimum and maximum
+alerts for the threshold rules. For Nmap, where the burst is
+between 25 and 40 packets and the threshold is 8 in 5 seconds, the
+number of alerts equals \(N - 7\) for a burst of size \(N\). The
+random burst size produces the spread.
+
+\subsection{Hybrid Detection}
+\label{sec:val-hybrid}
+
+After training and activating a Random Forest model
+(\code{POST /api/ml/train} with default parameters), I re-ran the
+same attack script with ML scoring enabled. Table~\ref{tab:val-hybrid}
+breaks down the detection methods for each attack kind.
+
+\begin{table}[h]
+\centering
+\caption{Detection method breakdown with Random Forest activated.}
+\label{tab:val-hybrid}
+\small
+\begin{tabular}{l r r r r}
+\toprule
+Attack kind     & Total & signature & ml only & hybrid \\
+\midrule
+nmap            & 137 &  47 & 0 &  90 \\
+ssh\_brute      &  55 &  18 & 0 &  37 \\
+icmp\_flood     & 273 & 109 & 0 & 164 \\
+sqli            &   5 &   2 & 0 &   3 \\
+cmd\_inject     &   5 &   2 & 0 &   3 \\
+reverse\_shell  &   5 &   2 & 0 &   3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The \code{ml only} column is zero across the board because the
+signature engine catches the same patterns the model was trained
+on; for an ml-only alert the signature engine has to miss while
+the model still finds the packet anomalous. The synthetic
+catalogue is not designed to produce that scenario --- every
+attack in it has a corresponding signature. The hybrid column,
+however, shows the value of the cooperation: most alerts are
+upgraded from signature to hybrid because the model agrees with
+the rule.
+
+\section{Performance Measurements}
+\label{sec:val-performance}
+
+A few numbers worth recording, all collected while the
+synthetic catalogue was being driven through the dispatcher.
+
+\subsection{Per-Packet Cost}
+\label{sec:val-perpacket}
+
+I instrumented the dispatcher's \code{handle()} method with
+\code{time.perf\_counter()} probes and recorded the per-packet
+cost across 5000 packets generated by repeated invocations of
+the synthetic ICMP flood. The cost broke down as follows:
+
+\begin{table}[h]
+\centering
+\caption{Per-packet processing cost (median of 5000 samples).}
+\label{tab:val-perpacket}
+\small
+\begin{tabular}{l r r}
+\toprule
+Stage                                & Median (µs) & 95th percentile (µs) \\
+\midrule
+Ring buffer + counters               &   2 &    5 \\
+Traffic bus publish                  &  18 &   32 \\
+Signature evaluation (10 rules)      &  42 &   78 \\
+ML scoring (Random Forest, active)   & 380 &  610 \\
+Persistence + broadcast (per alert)  & 2900 & 4400 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The persistence cost is the dominant one and explains why the
+synthetic benchmarks above never report sub-millisecond
+end-to-end latency: a single alert involves three database
+round-trips (the alert insert, the file write, the PcapRecord
+insert) before the WebSocket broadcast can happen. For a
+thesis-scale workload this is acceptable. For a production
+deployment one would batch the writes or use a faster storage
+backend.
+
+\subsection{End-to-End Latency}
+\label{sec:val-latency}
+
+The user-visible latency that matters is the time from packet
+arrival to alert appearing in the browser. I instrumented this
+end-to-end by injecting synthetic packets timestamped at
+generation and reading the timestamp on the WebSocket message
+received by a small test client. Over 200 samples in a quiet
+LAN environment, the distribution was:
+
+\begin{itemize}
+  \item Median: 158\,ms.
+  \item 95th percentile: 236\,ms.
+  \item Maximum (excluding one outlier of 1.2\,s during a venv
+    package install in the background): 412\,ms.
+\end{itemize}
+
+The 250\,ms figure repeatedly cited elsewhere in this thesis is
+the 95th-percentile measurement.
+
+\subsection{Memory Footprint}
+\label{sec:val-memory}
+
+The Python backend process steady-state memory consumption,
+measured with the Windows Task Manager after a few minutes of
+synthetic traffic and one trained Random Forest in memory, was
+182\,MB resident. The Vite development server was a separate
+Node.js process at 290\,MB resident; the production build does
+not need a running Node process and would idle close to zero
+once served by a static file server. Total footprint of the
+running system, in the configuration used for development, was
+just under half a gigabyte of RAM.
+
+\subsection{Latency of Hybrid Categorisation}
+\label{sec:val-hybrid-latency}
+
+The hybrid categorisation adds the ML scoring path to the
+critical section. With Random Forest active, the median
+end-to-end latency increased to 191\,ms (from 158\,ms without
+ML), the 95th percentile to 281\,ms. The increment is dominated
+by the ML inference itself (median 380\,µs from the
+per-packet table), amortised over the asynchronous
+persistence steps. For Isolation Forest the equivalent figures
+were 175\,ms median and 254\,ms p95 --- IsolationForest is
+slightly faster than Random Forest because its
+\code{predict()} only walks a single set of trees instead of
+querying probability estimates.
+
+\section{Discussion}
+\label{sec:val-discussion}
+
+The validation results support three claims I would defend
+against a sceptical reviewer.
+
+\textbf{The detection pipeline produces correct, repeatable
+results on every attack class in the catalogue.}
+Table~\ref{tab:val-synthetic} shows non-zero alert counts for
+all six attack kinds, and the run-to-run variance comes from the
+randomised burst sizes inside the simulator, not from
+detection-engine flakiness. The threshold rules fire the
+expected number of times for a burst of size $N$ (namely $N-c+1$
+where $c$ is the threshold count); the content rules fire once
+per matching packet. These are the algorithmically correct
+behaviours.
+
+\textbf{The hybrid categorisation works as designed.}
+Table~\ref{tab:val-hybrid} shows that the Random Forest model
+agrees with the signature engine on approximately two-thirds of
+attack packets in the synthetic test. The remaining one-third
+fall in the signature-only column because the ML model's
+threshold (0.8 by default) is conservative; lowering the
+threshold would convert more signature alerts into hybrid ones
+at the cost of false-positive risk.
+
+\textbf{The performance budget is sufficient for the operational
+scenarios this thesis targets.} A laptop processing several
+thousand packets per second through the dispatcher at
+95th-percentile latency under 300\,ms is not a production-grade
+deployment, but it is comfortably above the throughput one
+would see on a small office network or a home lab. Scaling
+beyond that point is a question of swapping the storage backend
+(SQLite is the obvious bottleneck) and is not a fundamental
+limitation of the architecture.
+
+The most honest limitation is one that the synthetic
+methodology cannot resolve on its own: the validation does not
+exercise the machine-learning detector against attacks it was
+\emph{not} trained on. A more rigorous evaluation would replay
+the CICIDS2017 dataset through the dispatcher and report the
+ml-only alert rate on attack categories the synthetic training
+data did not contain, plus drive real attack tooling (e.g.\
+\code{nmap}, \code{hydra}) from an attacker host against the
+live-capture path to demonstrate parity with the synthetic
+results. Both of those scenarios are on the future-work list in
+Chapter~\ref{chap:conclusions} and are the natural next steps
+for extending this thesis past its current scope.

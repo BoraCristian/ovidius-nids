@@ -1,0 +1,30 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "▶  Run the whole NIDS app",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "windows": { "python": "py" },
+      "linux":   { "python": "python3" },
+      "osx":     { "python": "python3" }
+    },
+    {
+      "name": "Backend only (uvicorn, requires venv)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "windows": { "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe" },
+      "linux":   { "python": "${workspaceFolder}/backend/.venv/bin/python" },
+      "osx":     { "python": "${workspaceFolder}/backend/.venv/bin/python" }
+    }
+  ]
+}

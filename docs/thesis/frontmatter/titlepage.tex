@@ -1,0 +1,50 @@
+% ----- Title page (matches Ovidius University template) -----
+\begin{titlepage}
+\thispagestyle{empty}
+
+% Top row: logo on the left, university block centered/right
+\begin{minipage}[t]{0.22\textwidth}
+  \vspace{0pt}
+  % Replace ovidius-logo.png with the actual seal image.
+  % The figure should be ~3 cm wide and roughly square.
+  \IfFileExists{figures/ovidius-logo.png}{%
+    \includegraphics[width=3.2cm]{ovidius-logo.png}%
+  }{\rule{3.2cm}{3.2cm}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.74\textwidth}
+  \vspace{0.6cm}
+  \centering
+  Ministerul Educației și Cercetării\\
+  Universitatea OVIDIUS din Constanța\\
+  Facultatea de Matematică și Informatică\\
+  Specializarea Computer Science
+\end{minipage}
+
+\vspace{4.0cm}
+
+\begin{center}
+  {\LARGE\bfseries Information System for\\
+   Network Detection Intrusion\par}
+  \vspace{0.8cm}
+  {\large Bachelor Thesis\par}
+\end{center}
+
+\vspace{2.0cm}
+
+\noindent\textbf{Scientific Advisor:}\\
+\textbf{Lect.\,univ.\,dr.\ Dorin Iordache}\\
+
+\vspace{2.5cm}
+
+\hfill\begin{minipage}{0.55\textwidth}
+  \raggedleft
+  \textbf{Graduate:}\\
+  \textbf{Bora Cristian-Vasile}\\
+\end{minipage}
+
+\vfill
+\begin{center}
+  Constanța\\
+  Iulie 2026
+\end{center}
+\end{titlepage}

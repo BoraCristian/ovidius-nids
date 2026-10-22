@@ -1,0 +1,159 @@
+% ============================
+%   4. Architecture
+% ============================
+\section{System architecture}
+\label{sec:architecture}
+
+\subsection{High-level overview}
+
+\nidsname{} is a two-tier application: a Python backend that performs
+capture, detection and persistence; and a single-page React frontend
+that consumes its REST and WebSocket APIs. The two communicate over
+HTTP/JSON for queries and over two dedicated WebSocket channels
+(\code{/ws/alerts} and \code{/ws/traffic}) for real-time push.
+Figure~\ref{fig:dataflow} sketches the packet life-cycle.
+
+\begin{figure}[h]
+\centering
+\fbox{
+\parbox{0.92\textwidth}{\centering\ttfamily
+\small
+NIC / Simulator
+\;$\rightarrow$\; Sniffer
+\;$\rightarrow$\; Dispatcher
+\;$\rightarrow$\; [ Signature engine \;+\; ML detector ]\\[0.3em]
+\;$\rightarrow$\; merge \;$\rightarrow$\; DB (Alert, PcapRecord, TrafficEvent)\\[0.3em]
+\;$\rightarrow$\; per-alert JSONL ring on disk \;+\; WebSocket broadcast \;$\rightarrow$\; Browser
+}}
+\caption{End-to-end packet flow from capture to UI.}
+\label{fig:dataflow}
+\end{figure}
+
+\subsection{Component breakdown}
+
+\subsubsection{Capture}
+
+Two implementations share a common asynchronous callback signature:
+\begin{itemize}
+    \item \code{LiveSniffer} uses Scapy~\cite{scapy} on a real interface.
+        It runs on a dedicated thread and posts each parsed
+        \code{Packet} to the main event loop via
+        \code{asyncio.run\_coroutine\_threadsafe}.
+    \item \code{TrafficSimulator} emits a steady benign baseline of
+        24--40 packets per second and injects an attack burst every
+        five seconds (Nmap-like scan, SSH brute-force, ICMP flood, SQL
+        injection, command injection, reverse shell). It exists so
+        that the application can be demonstrated on a laptop without
+        the elevated privileges required by raw packet capture, and so
+        that the ML detector always has labelled-ish data to react to.
+\end{itemize}
+
+\subsubsection{Dispatcher}
+
+The \code{Dispatcher} is the central coordination point. For every
+received \code{Packet} it:
+\begin{enumerate}
+    \item Increments the packet counter and the sliding-window packets-per-second
+        meter.
+    \item Pushes the packet onto a fixed-size ring buffer (\code{deque}
+        of size 200), which acts as the source for forensic snapshots.
+    \item Publishes a compact event onto the \code{traffic\_bus} so that
+        any subscribed WebSocket clients (i.e. the dashboard) see live
+        throughput.
+    \item Optionally persists a \code{TrafficEvent} record (sampled at
+        $1/5$ packets to keep the events table small during demos).
+    \item Calls the signature engine and the ML detector and merges
+        their verdicts into zero-or-more alert candidates.
+    \item For each candidate, writes a JSONL ring-tail to disk, creates
+        \code{Alert} and \code{PcapRecord} rows, and broadcasts the
+        alert on \code{alert\_bus}.
+\end{enumerate}
+
+\subsubsection{Signature engine}
+
+The engine compiles each enabled DB row into an in-memory
+\code{CompiledRule}: a struct of pre-compiled regular expressions,
+port ranges, flag masks, and (for threshold rules) a sliding-window
+counter keyed by source IP. Compilation happens once at startup and
+again whenever the rules table is mutated through the API (hot reload).
+For every incoming packet, the engine iterates all enabled rules and
+yields one alert-candidate dictionary per match.
+
+\subsubsection{ML detector}
+
+The \code{MLDetector} class wraps both algorithms behind a common
+\code{score(pkt) $\rightarrow$ (label, score)} interface. State (current
+model, feature names, per-source last-seen timestamp) is protected by a
+mutex so that training can run concurrently with inference.
+Persistence uses \code{joblib}; activating a model loads the saved
+pickle and flips the singleton's active flag.
+
+\subsubsection{Forensics layer}
+
+When an alert is created, \code{write\_packet\_log()} serialises the
+last 50 entries of the dispatcher's ring buffer as JSON Lines into a
+file named after the alert ID. The path is stored on the \code{Alert}
+row, and a separate \code{PcapRecord} row mirrors it for table-driven
+browsing in the UI. Download is served by an authenticated FastAPI
+endpoint that performs a path check and streams the file with
+\code{FileResponse}.
+
+\subsubsection{REST + WebSocket API}
+
+The HTTP surface is organised by tag in FastAPI:
+\code{/api/auth}, \code{/api/alerts}, \code{/api/rules},
+\code{/api/dashboard}, \code{/api/forensics}, \code{/api/ml},
+\code{/api/health}. All resource routes are protected by
+\code{Depends(get\_current\_user)}, which decodes a JWT and reloads the
+caller from the database. Two WebSocket endpoints push real-time data:
+\code{/ws/alerts} (each new alert as a single message) and
+\code{/ws/traffic} (batched traffic samples at $\approx 4$\,Hz to keep
+the dashboard chart smooth without overwhelming the network).
+
+\subsubsection{Frontend}
+
+The dashboard is a Vite~\cite{vite}-bundled React application styled
+with TailwindCSS. State is held mostly in React Context (auth,
+live alerts, live traffic); pages such as \code{Alerts} and \code{Rules}
+fetch via authenticated REST and reconcile against the live WebSocket
+stream client-side. The visual identity (deep navy with cyan accents) is
+applied through a Tailwind theme to keep the look consistent across all
+pages and the new modal components introduced in Section~\ref{sec:current_state}.
+
+\subsection{Data model}
+
+The application uses five SQLAlchemy ORM tables:
+\begin{description}
+    \item[User] account credentials and role (admin/analyst).
+        Passwords are hashed with bcrypt~\cite{bcrypt}.
+    \item[Rule] one row per signature; the \code{match} field is a JSON
+        blob whose shape mirrors Listing~\ref{lst:rule}.
+    \item[Alert] the central record. Carries severity, category,
+        detection method (signature/ml/hybrid), ML score, source/destination
+        5-tuple, status (new/triaged/closed), and the path to its
+        associated PCAP file.
+    \item[PcapRecord] denormalised view of the forensic file for the UI
+        Forensics table; references \code{Alert} via foreign key.
+    \item[TrafficEvent] sampled record of traffic for historical
+        analysis.
+    \item[MLModel] persisted metadata for trained models (algorithm,
+        path, metrics, feature importance, active flag).
+\end{description}
+
+The schema is created with \code{Base.metadata.create\_all()} on first
+boot; an Alembic migration suite is planned for the final thesis to
+support schema evolution without losing data.
+
+\subsection{One-click launcher}
+
+The launcher (\code{run.py}) is a deliberate design choice rather than
+an afterthought. It performs, in order: Python version check (refuses
+$\geq 3.14$ because scientific packages lack Windows wheels for very
+recent CPython releases, which would force a Visual~C++ build);
+creation of \code{backend/.venv}; dependency installation against a
+pinned \code{requirements.txt}; frontend \code{npm install};
+parallel launch of \code{uvicorn} and \code{vite dev}; browser
+auto-open; supervised waiting on Ctrl+C with cooperative shutdown of
+both children. The wrappers \code{run.bat} (Windows) and \code{run.sh}
+(macOS/Linux) merely pick the best available Python interpreter and
+delegate to \code{run.py}.
