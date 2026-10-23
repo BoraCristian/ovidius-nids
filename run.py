@@ -9,8 +9,8 @@ What it does (in order):
   1. Creates backend/.venv if missing.
   2. Installs backend requirements (requirements.txt) inside that venv.
   3. Installs frontend node_modules if missing.
-  4. Starts the FastAPI backend on http://localhost:8000
-  5. Starts the Vite frontend on http://localhost:5173
+  4. Starts the FastAPI backend on http://localhost:8000 (this machine only)
+  5. Starts the Vite frontend on http://localhost:5173 (this machine only)
   6. Opens http://localhost:5173 in your default browser.
   7. Streams both processes' logs with [backend]/[frontend] prefixes.
   8. Ctrl+C cleanly stops everything.
@@ -47,6 +47,7 @@ REQUIREMENTS  = BACKEND_DIR / "requirements.txt"
 ENV_EXAMPLE   = BACKEND_DIR / ".env.example"
 ENV_FILE      = BACKEND_DIR / ".env"
 
+BACKEND_HOST  = "127.0.0.1"
 BACKEND_PORT  = 8000
 FRONTEND_PORT = 5173
 FRONTEND_URL  = f"http://localhost:{FRONTEND_PORT}"
@@ -56,6 +57,20 @@ IS_WINDOWS = platform.system() == "Windows"
 # --------------------------------------------------------------------------- #
 # Tiny terminal helpers                                                        #
 # --------------------------------------------------------------------------- #
+def _force_utf8_output() -> None:
+    """Print ▸ / ✓ safely even when stdout is a file or pipe.
+
+    Redirected output on Windows defaults to the ANSI code page (cp1252),
+    which cannot encode those symbols and would crash the launcher.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
+_force_utf8_output()
+
+
 def _supports_color() -> bool:
     return sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
 
@@ -292,19 +307,29 @@ def _stream(proc: subprocess.Popen, label: str, color_code: str) -> None:
     proc.stdout.close()
 
 
+def backend_command() -> list[str]:
+    # Loopback only: the demo ships with admin/admin, so it must not be
+    # reachable from other machines on a shared (campus / café) network.
+    return [
+        str(venv_python()), "-m", "uvicorn", "app.main:app",
+        "--host", BACKEND_HOST, "--port", str(BACKEND_PORT),
+        "--reload",
+    ]
+
+
+def frontend_command(npm: str) -> list[str]:
+    # No `--host`: Vite then listens on localhost only (same reason as above).
+    return [npm, "run", "dev", "--", "--port", str(FRONTEND_PORT)]
+
+
 def start_backend() -> subprocess.Popen:
     step("Starting backend (FastAPI)…")
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
-    cmd = [
-        str(venv_python()), "-m", "uvicorn", "app.main:app",
-        "--host", "0.0.0.0", "--port", str(BACKEND_PORT),
-        "--reload",
-    ]
     proc = subprocess.Popen(
-        cmd, cwd=str(BACKEND_DIR),
+        backend_command(), cwd=str(BACKEND_DIR),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, env=env,
+        text=True, encoding="utf-8", errors="replace", env=env,
         bufsize=1,
     )
     _procs.append(proc)
@@ -317,11 +342,10 @@ def start_frontend(npm: str) -> subprocess.Popen:
     env = os.environ.copy()
     env.setdefault("FORCE_COLOR", "1")
     env.setdefault("BROWSER", "none")  # we open the browser ourselves
-    cmd = [npm, "run", "dev", "--", "--host", "--port", str(FRONTEND_PORT)]
     proc = subprocess.Popen(
-        cmd, cwd=str(FRONTEND_DIR),
+        frontend_command(npm), cwd=str(FRONTEND_DIR),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, env=env,
+        text=True, encoding="utf-8", errors="replace", env=env,
         bufsize=1,
         shell=False,
     )

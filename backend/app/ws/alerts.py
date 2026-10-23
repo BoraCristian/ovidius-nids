@@ -14,7 +14,8 @@ router = APIRouter()
 
 
 async def _auth(ws: WebSocket, token: str | None) -> bool:
-    """Allow either a valid JWT in the query string OR (in dev) any connection.
+    """Require a valid JWT in the query string (browsers can't set headers on
+    WebSocket opens); otherwise close with 4401.
     Clients connect as: ws://host/ws/alerts?token=<jwt>"""
     if not token:
         await ws.close(code=4401)

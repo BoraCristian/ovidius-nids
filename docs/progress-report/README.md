@@ -1,18 +1,19 @@
 # Progress report — LaTeX sources
 
-This folder holds the LaTeX sources for the bachelor's thesis
-**progress report** for *Ovidius NIDS — Signature-based and Machine-Learning-based
-Network Intrusion Detection with built-in Forensics*.
+LaTeX sources for the bachelor's thesis **progress report** for *Ovidius NIDS —
+Signature-based and Machine-Learning-based Network Intrusion Detection with
+built-in Forensics*.
 
-It is **not** the final thesis: it is a snapshot of the current state,
-intended for presentation to the coordinating teacher.
+It is **not** the final thesis: it is a snapshot of the project's state at the
+progress review, presented to the scientific coordinator. The compiled report is
+[`main.pdf`](main.pdf); the final thesis lives in [`../thesis`](../thesis).
 
 ## Folder layout
 
 ```
 docs/progress-report/
 ├── main.tex                ← root document (preamble + \input commands)
-├── references.bib          ← BibLaTeX bibliography
+├── references.bib          ← BibTeX bibliography (natbib, plainnat style)
 ├── sections/
 │   ├── title.tex
 │   ├── abstract.tex
@@ -23,13 +24,14 @@ docs/progress-report/
 │   ├── implementation.tex
 │   ├── current_state.tex
 │   └── future_work.tex
+├── main.pdf                ← compiled report
 └── README.md               ← this file
 ```
 
 ## How to build the PDF
 
-You need a TeX distribution (TeX Live, MiKTeX, or MacTeX) with the
-`biber` backend. From inside this folder:
+You need a TeX distribution (TeX Live, MiKTeX, or MacTeX). From inside this
+folder:
 
 ```
 latexmk -pdf main.tex
@@ -39,36 +41,9 @@ If `latexmk` is not available, the manual sequence is:
 
 ```
 pdflatex main.tex
-biber main
+bibtex main
 pdflatex main.tex
 pdflatex main.tex
 ```
 
-The output PDF will be `main.pdf`.
-
-## Editing tips
-
-- The title page expects the coordinator's name in
-  `sections/title.tex` — replace `[Numele coordonatorului]` before
-  printing.
-- All section content lives under `sections/`. Each `\input{...}` in
-  `main.tex` corresponds to one file. To add a section, create a new
-  `.tex` file under `sections/` and `\input` it from `main.tex`.
-- References are managed by **BibLaTeX + biber**. To add a citation,
-  put the BibTeX entry into `references.bib` and cite it with
-  `\cite{key}` in the text.
-
-## Translating to Romanian
-
-The report is currently in English (the project title is also in
-English). If the defense requires a Romanian version:
-
-1. Replace `\usepackage[english]{babel}` with
-   `\usepackage[romanian]{babel}` in `main.tex`.
-2. Translate the contents of each file under `sections/`.
-
-## Online editing
-
-You can drop the entire `docs/progress-report/` folder into Overleaf as
-a new project and it will build out of the box (Overleaf's compiler
-defaults to `latexmk` and supports biber).
+The folder also builds as-is on Overleaf.

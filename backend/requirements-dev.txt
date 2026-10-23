@@ -1,0 +1,5 @@
+# Test tooling (used by CI). Install with:  pip install -r requirements-dev.txt
+-r requirements.txt
+pytest>=8.0,<10.0
+# HTTP client behind FastAPI's TestClient (Starlette >= 1.x wants httpx2).
+httpx2>=2.14,<3.0

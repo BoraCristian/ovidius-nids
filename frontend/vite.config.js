@@ -6,8 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
-      '/ws':  { target: 'ws://localhost:8000', ws: true, changeOrigin: true },
+      // 127.0.0.1, not "localhost": the backend binds IPv4 loopback only and
+      // "localhost" may resolve to ::1 first.
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/ws':  { target: 'ws://127.0.0.1:8000', ws: true, changeOrigin: true },
     },
   },
 });

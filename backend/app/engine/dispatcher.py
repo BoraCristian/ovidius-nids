@@ -48,6 +48,7 @@ class Dispatcher:
 
         # Sliding-window pps tracker
         self._last_pps_ts    = time.monotonic()
+        self._last_pkt_ts    = self._last_pps_ts
         self._pps_counter    = 0
         self._last_pps_value = 0.0
 
@@ -56,7 +57,13 @@ class Dispatcher:
     def packets(self) -> int:   return self._pkt_count
     @property
     def alerts(self) -> int:    return self._alert_count
-    def     pps(self) -> float: return self._last_pps_value
+
+    def pps(self) -> float:
+        # The rate is only recomputed when a packet arrives, so after traffic
+        # stops the last burst's value would stay frozen on the dashboard.
+        if time.monotonic() - self._last_pkt_ts > 2 * PPS_WINDOW_SEC:
+            return 0.0
+        return self._last_pps_value
 
     # --------------------------------------------------------------------- #
     # Main entry point                                                       #
@@ -191,6 +198,7 @@ class Dispatcher:
     def _tick_pps(self) -> None:
         self._pps_counter += 1
         now = time.monotonic()
+        self._last_pkt_ts = now
         elapsed = now - self._last_pps_ts
         if elapsed >= PPS_WINDOW_SEC:
             self._last_pps_value = self._pps_counter / elapsed

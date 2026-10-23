@@ -4,6 +4,9 @@ Uses the `bcrypt` library directly instead of `passlib`.  Passlib (1.7.4) is
 unmaintained and breaks on bcrypt >= 4.1 because it tries to inspect
 `bcrypt.__about__.__version__`, which modern bcrypt releases no longer
 provide.  Going direct also removes a dependency layer.
+
+JWTs use PyJWT (the thesis version used python-jose, which is barely
+maintained and has unfixed advisories, as does its `ecdsa` dependency).
 """
 from __future__ import annotations
 
@@ -11,7 +14,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from .config import get_settings
 
@@ -60,5 +64,5 @@ def create_access_token(
 def decode_access_token(token: str) -> dict[str, Any] | None:
     try:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-    except JWTError:
+    except PyJWTError:
         return None

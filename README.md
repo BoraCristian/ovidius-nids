@@ -1,5 +1,7 @@
 # Ovidius NIDS — Signature + ML Network Intrusion Detection System
 
+[![CI](https://github.com/BoraCristian/ovidius-nids/actions/workflows/ci.yml/badge.svg)](https://github.com/BoraCristian/ovidius-nids/actions/workflows/ci.yml)
+
 A **full-stack, SIEM-style network intrusion detection system** built from scratch for my
 Bachelor's thesis at the Faculty of Mathematics and Computer Science, *Ovidius University of Constanța* (2026).
 
@@ -43,8 +45,9 @@ It combines:
 | Backend    | Python 3.12, FastAPI, SQLAlchemy 2 (async) + aiosqlite, WebSockets |
 | ML         | scikit-learn (Random Forest, Isolation Forest), NumPy              |
 | Packet I/O | Scapy (live mode) · built-in traffic simulator (demo mode)         |
-| Auth       | JWT (OAuth2 password flow) + bcrypt                                |
-| Frontend   | React 18, Vite, TailwindCSS, Recharts, lucide-react                |
+| Auth       | JWT via PyJWT (OAuth2 password flow) + bcrypt                      |
+| Frontend   | React 18, React Router 7, Vite, TailwindCSS, Recharts, lucide-react |
+| Testing    | pytest (64 tests: engines, ML, API, launcher) · GitHub Actions CI  |
 
 ### Project layout
 
@@ -60,12 +63,14 @@ backend/
     seed.py     default admin user + rule seeding
     main.py     FastAPI entry point (lifespan wires capture + engines)
   data/rules/default_rules.yaml   10 default signature rules
-  requirements.txt
+  tests/        pytest suite (signature engine, ML detector, API end to end, launcher)
+  requirements.txt / requirements-dev.txt
 frontend/
   src/pages/    Login, Dashboard, Alerts, AlertDetail, Rules, MLModels, Forensics, AttackConsole, Settings
 docs/           thesis, presentation and progress report (LaTeX sources + PDFs)
 run.py          one-click launcher (venv, deps, both servers, browser)
 run.bat/run.sh  wrappers for run.py
+.github/        CI workflow (backend tests on Python 3.10 + 3.12, frontend build)
 ```
 
 ## Running it
@@ -86,8 +91,16 @@ The launcher creates `backend/.venv`, installs the Python and npm dependencies, 
 > The first launch takes a few minutes: it installs dependencies, and the very first import of
 > scikit-learn is slow. Later launches start in seconds.
 
-Log in with **`admin` / `admin`** (change it in `backend/.env` before any non-local use).
-The OpenAPI explorer is at <http://localhost:8000/docs>.
+Log in with **`admin` / `admin`**. The OpenAPI explorer is at <http://localhost:8000/docs>.
+
+**Security defaults:**
+
+- Both servers listen on **localhost only**, so the demo isn't reachable from other machines on
+  a shared network.
+- The JWT signing key is **generated randomly per install** (stored in the git-ignored
+  `backend/data/.secret_key`) unless you set `SECRET_KEY` in `backend/.env`.
+- The login form pre-fills the demo account only while `DEBUG=true`. Set `DEBUG=false` and
+  change `ADMIN_PASSWORD` in `backend/.env` before any non-demo use.
 
 ### Demo walkthrough
 
@@ -126,6 +139,27 @@ SNIFFER_BPF_FILTER=tcp or udp   # optional
 Live capture needs raw-socket privileges (Linux: run as root or
 `sudo setcap cap_net_raw,cap_net_admin+eip $(readlink -f $(which python))`;
 Windows: install [Npcap](https://npcap.com/)).
+
+## Tests
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite runs the whole app in-process against a throwaway database (your `nids.db`, models
+and captures are never touched). It covers:
+
+- **Signature engine:** every match primitive, the *N − c + 1* threshold behaviour, and that
+  each simulated attack trips its default rule while benign traffic trips none.
+- **ML detector:** hold-out accuracy, **≤ 1 % alerts on benign traffic**, **≥ 85 % of scan /
+  brute-force / flood packets flagged**, and identical scores after a save/load round trip.
+- **API end to end:** login, rejected forged tokens, every Attack Console attack, forensic
+  downloads, rule CRUD, ML training producing `hybrid` alerts, and the WebSocket alert stream.
+- **Launcher:** localhost-only binding and crash-free output when redirected.
+
+GitHub Actions runs it on Python 3.10 and 3.12 and builds the frontend on every push.
 
 ## Results (thesis Chapter 6)
 
