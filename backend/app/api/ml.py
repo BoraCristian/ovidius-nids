@@ -29,8 +29,8 @@ _MODEL_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 async def _unique_name(db: AsyncSession, base: str) -> str:
     """
     Return `base` if it's free, otherwise `base-2`, `base-3`, ... until we
-    find an unused `MLModel.name`.  Prevents the UNIQUE-constraint 500 that
-    users used to hit when clicking "Train + activate" twice in a row.
+    find an unused `MLModel.name`, so clicking "Train + activate" twice in a
+    row doesn't hit the UNIQUE constraint.
     """
     existing = {
         n for (n,) in (await db.execute(select(MLModel.name))).all()

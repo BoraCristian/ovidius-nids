@@ -88,7 +88,7 @@ def test_training_reports_good_holdout_metrics(trained):
 
 
 def test_benign_traffic_raises_no_ml_alerts(trained, clock, sim):
-    """Regression test for the post-thesis fix: benign traffic used to be flagged en masse."""
+    """Benign traffic must not trip the ML detector: at most 1 % of packets may alert."""
     detector, _ = trained
     n = 2000
     assert count_alerts(detector, clock, benign_stream(sim, n)) / n <= 0.01

@@ -5,8 +5,8 @@ unmaintained and breaks on bcrypt >= 4.1 because it tries to inspect
 `bcrypt.__about__.__version__`, which modern bcrypt releases no longer
 provide.  Going direct also removes a dependency layer.
 
-JWTs use PyJWT (the thesis version used python-jose, which is barely
-maintained and has unfixed advisories, as does its `ecdsa` dependency).
+JWTs use PyJWT rather than python-jose, which is barely maintained and has
+unfixed advisories, as does its `ecdsa` dependency.
 """
 from __future__ import annotations
 

@@ -102,7 +102,7 @@ async def _alerts_timeline(db: AsyncSession, start: datetime) -> list[TimeBucket
     """Return `TIMELINE_BUCKETS` zero-filled 10-minute buckets over the last 6h.
 
     Implemented as a single SELECT that pulls only timestamps, then buckets in
-    Python.  Replaces the old loop that fired 36 round-trips per refresh.
+    Python, instead of one query per bucket (36 round-trips per refresh).
     """
     rows = (await db.execute(
         select(Alert.ts).where(Alert.ts >= start)

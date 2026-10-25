@@ -161,9 +161,9 @@ and captures are never touched). It covers:
 
 GitHub Actions runs it on Python 3.10, 3.12 and 3.14 and builds the frontend on every push.
 
-## Results (thesis Chapter 6)
+## Results
 
-The figures below are from Chapter 6 (*Experimental Validation*) of the thesis. They were measured
+The detection and performance figures below are from Chapter 6 (*Experimental Validation*) of the thesis. They were measured
 on an Intel i7-12700H / 16 GB / Windows 11 laptop by scripting `POST /api/sim/attack`: each attack
 fired 5 times, 1 s apart.
 
@@ -207,23 +207,20 @@ About two-thirds of signature alerts were confirmed by the ML model and upgraded
 
 Backend memory at steady state was about 182 MB.
 
-### Post-thesis fix: ML false positives on benign traffic
+**False positives on benign traffic**
 
-Chapter 6 ran with the benign baseline switched off, so it never measured false positives.
-With *Benign traffic* turned on, the original synthetic training data made the models flag
-normal traffic. Normal samples used server ports as their source port while real clients use
-high ephemeral ports, and Isolation Forest was configured with `contamination=0.3`. The
-training data and Isolation Forest features were fixed after the thesis. Measured against
-the simulator's benign baseline and attack bursts:
+Chapter 6 ran with the benign baseline switched off, so false positives were measured separately,
+with *Benign traffic* turned on, against the simulator's benign baseline and attack bursts:
 
-| Model            | Benign packets alerted on (before → after) | Attack packets flagged (after) |
-|------------------|--------------------------------------------|--------------------------------|
-| Random Forest    | ≈17–25 % → **0 %**                         | 92–99 % per attack type        |
-| Isolation Forest | 88 % labelled anomalous → **≈0.1 %**       | 93–98 % per attack type        |
+| Model            | Benign packets alerted on | Attack packets flagged  |
+|------------------|--------------------------:|------------------------:|
+| Random Forest    | **0 %**                   | 92–99 % per attack type |
+| Isolation Forest | **≈0.1 %**                | 93–98 % per attack type |
 
 In a live 60-second run (~1,900 benign packets), neither model raised a single false alarm, and
-both still caught an Nmap scan. Models saved before this fix keep their old behaviour, so retrain
-them from the ML Models page.
+both still caught an Nmap scan. This relies on realistic training data: normal clients connect
+from high ephemeral ports, just like attackers, so the models can't simply learn "unusual source
+port = attack". The test suite enforces it: at most 1 % of benign packets may raise an ML alert.
 
 ## Limitations and future work
 

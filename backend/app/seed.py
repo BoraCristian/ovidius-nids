@@ -31,12 +31,10 @@ async def seed_admin(db: AsyncSession) -> None:
 async def seed_rules(db: AsyncSession) -> list[Rule]:
     """Seed (or refresh) the rules table from the YAML file on every boot.
 
-    The previous implementation only inserted brand-new names, which meant
-    editing ``default_rules.yaml`` and restarting did *not* change the
-    thresholds of rules that were already in the database — confusing for
-    anyone tuning the demo. We now also overwrite the ``match``,
-    ``severity`` and ``description`` of any existing rule whose name still
-    matches an entry in the YAML, while leaving user-created rules alone.
+    New names are inserted, and any existing rule whose name still matches
+    an entry in the YAML gets its ``match``, ``severity`` and ``description``
+    overwritten, so editing ``default_rules.yaml`` and restarting always
+    takes effect. User-created rules are left alone.
     """
     settings = get_settings()
     path = Path(settings.rules_file)

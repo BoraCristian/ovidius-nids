@@ -233,7 +233,7 @@ class MLDetector:
             if ref is not None:
                 raw = -model.score_samples(x)[0]
                 score = float(np.searchsorted(ref, raw, side="right") / len(ref))
-            else:                           # models saved before calibration was added
+            else:                           # uncalibrated model (no training scores)
                 score = float(-model.decision_function(x)[0])
             return (1 if pred == -1 else 0), score
         if hasattr(model, "predict_proba"):

@@ -273,7 +273,7 @@ class TrafficSimulator:
                 for _ in range(random.randint(6, 10)):
                     await self.handler(self._benign())
 
-            # Legacy mode: inject a random attack burst every ~5 s.
+            # Auto-attack mode: inject a random attack burst every ~5 s.
             # In on-demand mode this branch is skipped and attacks must be
             # triggered via fire_attack() / the /api/sim/attack endpoint.
             if not self.attacks_on_demand_only and tick % 20 == 0:
