@@ -47,7 +47,7 @@ It combines:
 | Packet I/O | Scapy (live mode) · built-in traffic simulator (demo mode)         |
 | Auth       | JWT via PyJWT (OAuth2 password flow) + bcrypt                      |
 | Frontend   | React 18, React Router 7, Vite, TailwindCSS, Recharts, lucide-react |
-| Testing    | pytest (64 tests: engines, ML, API, launcher) · GitHub Actions CI  |
+| Testing    | pytest (70 tests: engines, ML, API, launcher) · GitHub Actions CI  |
 
 ### Project layout
 
@@ -70,12 +70,12 @@ frontend/
 docs/           thesis, presentation and progress report (LaTeX sources + PDFs)
 run.py          one-click launcher (venv, deps, both servers, browser)
 run.bat/run.sh  wrappers for run.py
-.github/        CI workflow (backend tests on Python 3.10 + 3.12, frontend build)
+.github/        CI workflow (backend tests on Python 3.10, 3.12 + 3.14, frontend build)
 ```
 
 ## Running it
 
-**Requirements:** Python 3.10+ (3.12 recommended) and Node.js 18+ on `PATH`.
+**Requirements:** Python 3.10–3.14 (3.12 recommended) and Node.js 18+ on `PATH`.
 
 ### One click
 
@@ -159,7 +159,7 @@ and captures are never touched). It covers:
   downloads, rule CRUD, ML training producing `hybrid` alerts, and the WebSocket alert stream.
 - **Launcher:** localhost-only binding and crash-free output when redirected.
 
-GitHub Actions runs it on Python 3.10 and 3.12 and builds the frontend on every push.
+GitHub Actions runs it on Python 3.10, 3.12 and 3.14 and builds the frontend on every push.
 
 ## Results (thesis Chapter 6)
 
@@ -235,4 +235,10 @@ them from the ML Models page.
 
 ## License
 
-Academic project: Bachelor's Thesis, Ovidius University of Constanța, 2025/2026.
+The source code is released under the [MIT License](LICENSE).
+
+The thesis, slides and progress report in [`docs/`](docs) are © 2026 Cristian Bora, all rights
+reserved, and the Ovidius University logo belongs to the university. They're here to read and
+cite, not covered by the MIT License.
+
+Built as my Bachelor's thesis at Ovidius University of Constanța, 2025/2026.

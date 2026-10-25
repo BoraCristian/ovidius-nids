@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +20,10 @@ from app.schemas.ml import MLModelOut, MLTrainRequest
 log = logging.getLogger("nids.ml")
 
 router = APIRouter(prefix="/api/ml", tags=["ml"], dependencies=[Depends(get_current_user)])
+
+# The model name becomes part of the artifact's filename, so it must not be
+# able to contain path separators or "..".
+_MODEL_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
 async def _unique_name(db: AsyncSession, base: str) -> str:
@@ -47,6 +52,11 @@ async def list_models(db: AsyncSession = Depends(get_db)) -> list[MLModelOut]:
 @router.post("/train", response_model=MLModelOut)
 async def train(req: MLTrainRequest, db: AsyncSession = Depends(get_db)) -> MLModelOut:
     settings = get_settings()
+    if not _MODEL_NAME_RE.fullmatch(req.name) or ".." in req.name:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Model name must be 1-64 letters, digits, '.', '_' or '-', starting with a letter or digit.",
+        )
 
     try:
         result = detector.train_synthetic(algorithm=req.algorithm)

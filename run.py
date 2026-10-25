@@ -111,24 +111,24 @@ def banner() -> None:
 # --------------------------------------------------------------------------- #
 def check_python_version() -> None:
     """
-    Scientific packages (scikit-learn, numpy, pandas) only ship Windows wheels
+    Scientific packages (scikit-learn, numpy) only ship Windows wheels
     for Python versions they've explicitly tested against.  If the user is on a
-    brand-new Python (e.g. 3.14 the week it drops), pip will try to *compile*
+    brand-new Python (e.g. 3.15 the week it drops), pip will try to *compile*
     those packages from C/C++/Fortran source, which needs MSVC build tools and
     will fail with a confusing meson error.
 
-    We refuse to run on anything newer than 3.13 and tell the user to install
-    Python 3.12 LTS instead.  (3.10–3.13 all work.)
+    We refuse to run on anything newer than 3.14 and tell the user to install
+    Python 3.12 or 3.14 instead.  (3.10–3.14 all work.)
     """
     major, minor = sys.version_info[:2]
     if (major, minor) < (3, 10):
         fail(f"Python 3.10+ is required.  You're on {major}.{minor}.")
         print("  Install Python 3.12 from https://www.python.org/downloads/")
         sys.exit(1)
-    if (major, minor) >= (3, 14):
+    if (major, minor) >= (3, 15):
         fail(f"Python {major}.{minor} is too new for some of this project's dependencies.")
         print()
-        print(c("33;1", "  scikit-learn / numpy / pandas publish Windows wheels only for"))
+        print(c("33;1", "  scikit-learn / numpy / PyYAML publish Windows wheels only for"))
         print(c("33;1", "  Python versions they've tested.  On very new Python releases,"))
         print(c("33;1", "  pip falls back to building from source — which needs the"))
         print(c("33;1", "  Microsoft Visual C++ Build Tools (~7 GB) and will fail otherwise."))
@@ -143,7 +143,7 @@ def check_python_version() -> None:
             print(c("36", "       will automatically pick Python 3.12."))
             print()
             print(c("33;1", "  Alternative: install \"Visual C++ Build Tools\" so pip can compile"))
-            print(c("33;1", "  from source.  Bigger download, takes longer, but keeps your 3.14."))
+            print(c("33;1", f"  from source.  Bigger download, takes longer, but keeps your {major}.{minor}."))
         else:
             print(c("36", "    macOS  :  brew install python@3.12"))
             print(c("36", "    Ubuntu :  sudo apt install python3.12 python3.12-venv"))

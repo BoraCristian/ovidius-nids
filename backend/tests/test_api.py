@@ -122,6 +122,12 @@ def test_trained_model_upgrades_signature_alerts_to_hybrid(client, auth_headers)
     assert any(a["detection_method"] == "hybrid" for a in recent)
 
 
+@pytest.mark.parametrize("name", ["../escape", r"..\escape", "a/b", "", ".hidden", "x" * 65])
+def test_train_rejects_unsafe_model_names(client, auth_headers, name):
+    r = client.post("/api/ml/train", json={"name": name}, headers=auth_headers)
+    assert r.status_code == 400, r.text
+
+
 # --------------------------------------------------------------------------- #
 # WebSockets                                                                   #
 # --------------------------------------------------------------------------- #
