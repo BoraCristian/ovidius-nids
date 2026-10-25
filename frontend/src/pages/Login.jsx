@@ -58,11 +58,11 @@ export default function Login() {
         <form onSubmit={submit} className="space-y-4">
           <div>
             <label className="block text-xs uppercase tracking-wider text-slate-400 mb-1">Username</label>
-            <input className="input" value={username} onChange={e => setU(e.target.value)} autoFocus />
+            <input className="input" value={username} onChange={e => setU(e.target.value)} autoComplete="username" required autoFocus />
           </div>
           <div>
             <label className="block text-xs uppercase tracking-wider text-slate-400 mb-1">Password</label>
-            <input type="password" className="input" value={password} onChange={e => setP(e.target.value)} />
+            <input type="password" className="input" value={password} onChange={e => setP(e.target.value)} autoComplete="current-password" required />
           </div>
           {err && <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{err}</div>}
           <button type="submit" disabled={busy} className="btn btn-primary w-full justify-center">

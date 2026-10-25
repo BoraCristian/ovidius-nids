@@ -182,7 +182,7 @@ class MLDetector:
         feature_importance = None
         if hasattr(model, "feature_importances_"):
             feature_importance = {
-                n: float(v) for n, v in zip(self.feature_names, model.feature_importances_)
+                n: float(v) for n, v in zip(self.feature_names, model.feature_importances_, strict=True)
             }
 
         with self._lock:

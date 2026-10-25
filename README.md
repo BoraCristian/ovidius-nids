@@ -47,7 +47,7 @@ It combines:
 | Packet I/O | Scapy (live mode) · built-in traffic simulator (demo mode)         |
 | Auth       | JWT via PyJWT (OAuth2 password flow) + bcrypt                      |
 | Frontend   | React 18, React Router 7, Vite, TailwindCSS, Recharts, lucide-react |
-| Testing    | pytest (70 tests: engines, ML, API, launcher) · GitHub Actions CI  |
+| Testing    | pytest (71 tests: engines, ML, API, launcher) · GitHub Actions CI  |
 
 ### Project layout
 
@@ -163,8 +163,8 @@ GitHub Actions runs it on Python 3.10, 3.12 and 3.14 and builds the frontend on 
 
 ## Results
 
-The detection and performance figures below are from Chapter 6 (*Experimental Validation*) of the thesis. They were measured
-on an Intel i7-12700H / 16 GB / Windows 11 laptop by scripting `POST /api/sim/attack`: each attack
+The detection and performance figures below are from Chapter 6 (*Experimental Validation*) of
+the thesis. They were measured on an Intel i7-12700H / 16 GB / Windows 11 laptop by scripting `POST /api/sim/attack`: each attack
 fired 5 times, 1 s apart.
 
 **Signature detection: alerts per attack burst**

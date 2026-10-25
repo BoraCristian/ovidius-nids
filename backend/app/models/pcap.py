@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, UTCDateTime
 
 
 class PcapRecord(Base):
@@ -20,5 +20,5 @@ class PcapRecord(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     packet_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+        UTCDateTime(), default=lambda: datetime.now(timezone.utc), index=True
     )

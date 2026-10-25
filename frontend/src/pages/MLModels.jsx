@@ -121,8 +121,7 @@ export default function MLModels() {
               <Play className="w-4 h-4" /> {busy ? 'Training…' : 'Train + activate'}
             </button>
             <div className="text-xs text-slate-500">
-              Dataset: synthetic (mixed benign + attack flow features). Drop a CSV under
-              <code className="tag-mono mx-1">backend/data/models</code> to extend.
+              Dataset: synthetic (mixed benign + attack flow features).
               Re-training with the same name auto-appends <code className="tag-mono">-2</code>,{' '}
               <code className="tag-mono">-3</code>… so you never overwrite an existing model.
             </div>

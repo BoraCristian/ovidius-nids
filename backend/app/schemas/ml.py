@@ -26,5 +26,5 @@ class MLModelOut(BaseModel):
 class MLTrainRequest(BaseModel):
     name: str = "baseline-rf"
     algorithm: str = "random_forest"
-    dataset: str = "synthetic"          # or path to CSV
+    dataset: str = "synthetic"
     activate: bool = True

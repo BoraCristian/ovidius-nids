@@ -480,12 +480,14 @@ def main() -> None:
                 except Exception:
                     pass
         else:
-            warn(f"Backend didn't respond in 60s. Check the logs above.")
+            warn("Backend didn't respond in 60s. Check the logs above.")
     else:
         step(f"Waiting for {FRONTEND_URL} …")
         if wait_for_url(FRONTEND_URL, timeout=60):
-            ok(f"Frontend is ready.  Opening {FRONTEND_URL} in your browser…")
-            if not args.no_browser:
+            if args.no_browser:
+                ok("Frontend is ready.")
+            else:
+                ok(f"Frontend is ready.  Opening {FRONTEND_URL} in your browser…")
                 try:
                     webbrowser.open(FRONTEND_URL)
                 except Exception:

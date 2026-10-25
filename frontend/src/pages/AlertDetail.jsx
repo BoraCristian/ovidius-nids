@@ -111,7 +111,7 @@ export default function AlertDetail() {
             <tbody>
               {packets.map((p, i) => (
                 <tr key={i} className="border-t border-navy-800 font-mono">
-                  <td className="px-2 py-1 text-slate-400">{p.ts?.slice(11, 19)}</td>
+                  <td className="px-2 py-1 text-slate-400">{p.ts && format(new Date(p.ts), 'HH:mm:ss')}</td>
                   <td className="px-2 py-1">{p.protocol}</td>
                   <td className="px-2 py-1">{p.src_ip}:{p.src_port}</td>
                   <td className="px-2 py-1">{p.dst_ip}:{p.dst_port}</td>

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base
+from app.core.database import Base, UTCDateTime
 
 
 class Alert(Base):
@@ -15,7 +15,7 @@ class Alert(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ts: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+        UTCDateTime(), default=lambda: datetime.now(timezone.utc), index=True
     )
     severity: Mapped[str] = mapped_column(String(16), default="medium", index=True)  # low | medium | high | critical
     category: Mapped[str] = mapped_column(String(64), default="generic")               # e.g. "Recon", "DoS", "Exploit"

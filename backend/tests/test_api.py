@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -92,6 +93,18 @@ def test_dashboard_summary_counts_alerts(client, auth_headers):
     summary = client.get("/api/dashboard/summary", headers=auth_headers).json()
     assert summary["alerts_total"] > 0
     assert summary["packets_seen"] > 0
+
+
+def test_timestamps_are_sent_as_utc(client, auth_headers):
+    """Without an explicit offset, browsers would show UTC times as local time."""
+    fire(client, auth_headers, "sqli")
+    alert = client.get("/api/alerts?limit=1", headers=auth_headers).json()[0]
+    sent = datetime.fromisoformat(alert["ts"].replace("Z", "+00:00"))
+    assert sent.utcoffset() == timedelta(0)
+    assert abs(datetime.now(timezone.utc) - sent) < timedelta(minutes=1)
+
+    summary = client.get("/api/dashboard/summary", headers=auth_headers).json()
+    assert summary["alerts_timeline"][-1]["count"] > 0   # lands in the newest bucket
 
 
 # --------------------------------------------------------------------------- #
