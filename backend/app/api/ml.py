@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,8 +22,9 @@ log = logging.getLogger("nids.ml")
 
 router = APIRouter(prefix="/api/ml", tags=["ml"], dependencies=[Depends(get_current_user)])
 
-# The model name becomes part of the artifact's filename, so it must not be
-# able to contain path separators or "..".
+# Model names are display labels shown in the UI. Artifact filenames are
+# generated server-side and never include them; this pattern just keeps the
+# labels tidy (no path separators, "..", or control characters).
 _MODEL_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 
@@ -67,10 +69,11 @@ async def train(req: MLTrainRequest, db: AsyncSession = Depends(get_db)) -> MLMo
             f"Training failed: {exc}",
         )
 
-    ts = int(datetime.now(timezone.utc).timestamp())
-    # Pick a free name first, so the artifact filename matches the DB row.
     name = await _unique_name(db, req.name)
-    path = Path(settings.ml_model_dir) / f"{name}-{ts}.joblib"
+    # The filename is built only from server-generated parts, so no
+    # client-supplied text ever reaches the filesystem path.
+    ts = int(datetime.now(timezone.utc).timestamp())
+    path = Path(settings.ml_model_dir) / f"model-{ts}-{secrets.token_hex(4)}.joblib"
     detector.save(path)
 
     if req.activate:

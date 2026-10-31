@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import jwt
 import pytest
@@ -139,6 +140,18 @@ def test_trained_model_upgrades_signature_alerts_to_hybrid(client, auth_headers)
 def test_train_rejects_unsafe_model_names(client, auth_headers, name):
     r = client.post("/api/ml/train", json={"name": name}, headers=auth_headers)
     assert r.status_code == 400, r.text
+
+
+def test_model_file_path_never_contains_the_client_supplied_name(client, auth_headers):
+    from app.core.config import get_settings
+
+    r = client.post("/api/ml/train", json={"name": "my.custom-model", "algorithm": "random_forest"},
+                    headers=auth_headers)
+    assert r.status_code == 200, r.text
+    saved = Path(r.json()["path"])
+    assert "my.custom-model" not in saved.name
+    assert saved.resolve().parent == Path(get_settings().ml_model_dir).resolve()
+    assert saved.exists()
 
 
 # --------------------------------------------------------------------------- #
