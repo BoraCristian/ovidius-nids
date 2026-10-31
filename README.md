@@ -102,6 +102,8 @@ Log in with **`admin` / `admin`**. The OpenAPI explorer is at <http://localhost:
 - The login form pre-fills the demo account only while `DEBUG=true`. Set `DEBUG=false` and
   change `ADMIN_PASSWORD` in `backend/.env` before any non-demo use.
 
+Found a security issue? Please report it privately, as described in [SECURITY.md](SECURITY.md).
+
 ### Demo walkthrough
 
 1. **Attack Console**: click *Run all attacks*, then watch the Dashboard and Alerts pages fill up.
