@@ -21,7 +21,7 @@ It combines:
   SQL injection, command injection, reverse shell) to demo detection end to end.
 
 📄 Full thesis: [`docs/thesis/LICENTA_2026_Bora.RM.Cristian-Vasile.pdf`](docs/thesis/LICENTA_2026_Bora.RM.Cristian-Vasile.pdf)
-· Slides: [`docs/presentation-beamer/Ovidius_NIDS_Beamer.pdf`](docs/presentation-beamer/Ovidius_NIDS_Beamer.pdf)
+· Slides: [`docs/Ovidius_NIDS_Presentation.pdf`](docs/Ovidius_NIDS_Presentation.pdf)
 
 ## Architecture
 
