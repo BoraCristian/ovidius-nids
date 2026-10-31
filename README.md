@@ -47,7 +47,7 @@ It combines:
 | Packet I/O | Scapy (live mode) · built-in traffic simulator (demo mode)         |
 | Auth       | JWT via PyJWT (OAuth2 password flow) + bcrypt                      |
 | Frontend   | React 18, React Router 7, Vite, TailwindCSS, Recharts, lucide-react |
-| Testing    | pytest (71 tests: engines, ML, API, launcher) · GitHub Actions CI  |
+| Testing    | pytest (72 tests: engines, ML, API, launcher) · GitHub Actions CI  |
 
 ### Project layout
 
